@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Minecraft assets (textures, sounds, music)
+# These are copyrighted by Mojang/Microsoft
+public/textures/
+sound-effects/
+soundtrack/
+texturepack/
+
+# WASM build artifacts
+public/cubiomes.js
+public/cubiomes.wasm
+
+
+
+
