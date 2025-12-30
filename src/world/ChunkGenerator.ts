@@ -43,7 +43,7 @@ export interface BlockData {
 }
 
 // Block colors for rendering (RGB) - Distinct biome colors
-export const BLOCK_COLORS: Record<BlockType, [number, number, number]> = {
+export const BLOCK_COLORS: Partial<Record<BlockType, [number, number, number]>> = {
   [BlockType.Air]: [0, 0, 0],
   [BlockType.Stone]: [128, 128, 128],
   [BlockType.Dirt]: [134, 96, 67],

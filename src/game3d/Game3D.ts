@@ -29,7 +29,7 @@ import {
   AttackCommand,
   UseCommand,
   InventorySlotCommand,
-  ZoomCommand,
+  OpenInventoryCommand,
 } from './GamepadManager';
 import { CreativeInventory } from './CreativeInventory';
 import { PlayerPhysics, type PhysicsWorld } from './PlayerPhysics';
@@ -440,24 +440,17 @@ export class Game3D {
       })
     );
     
-    // Zoom commands
-    gamepad.registerCommand(
-      GameAction.ZoomIn,
-      new ZoomCommand('in', () => {
-        if (!this.isPaused) {
-          this.zoom = Math.max(5, this.zoom - 2);
-          this.updateCameraZoom();
-        }
-      })
-    );
+    // Note: Zoom is handled continuously in the game loop (not as discrete commands)
+    // L2 = zoom out, R2 = zoom in (hold to continuously zoom)
     
+    // Open inventory command (Triangle / Y button)
     gamepad.registerCommand(
-      GameAction.ZoomOut,
-      new ZoomCommand('out', () => {
-        if (!this.isPaused) {
-          this.zoom = Math.min(26, this.zoom + 2);
-          this.updateCameraZoom();
-        }
+      GameAction.OpenInventory,
+      new OpenInventoryCommand(() => {
+        // Don't open if pause menu is visible
+        if (this.pauseMenu.isMenuVisible()) return;
+        
+        this.creativeInventory.toggle();
       })
     );
     
@@ -601,21 +594,28 @@ export class Game3D {
     const face = this.blockHighlight.getFace();
     
     // Check if the targeted block is a door - if so, toggle it instead of placing
-    const targetBlockType = this.chunkManager.getBlockTypeAt(targetPos.x, targetPos.y, targetPos.z);
-    console.log(`🎯 Right-click on block at (${targetPos.x}, ${targetPos.y}, ${targetPos.z}), type: ${targetBlockType !== null ? BlockType[targetBlockType] : 'null'}, isDoor: ${targetBlockType !== null && isDoorBlock(targetBlockType)}`);
+    // Also check one block below since doors are 2 blocks tall but only stored at bottom position
+    let targetBlockType = this.chunkManager.getBlockTypeAt(targetPos.x, targetPos.y, targetPos.z);
+    let doorY = targetPos.y;
+    
+    // If not a door at this position, check if we clicked on the top half of a door (door stored below)
+    if (targetBlockType === null || !isDoorBlock(targetBlockType)) {
+      const belowType = this.chunkManager.getBlockTypeAt(targetPos.x, targetPos.y - 1, targetPos.z);
+      if (belowType !== null && isDoorBlock(belowType)) {
+        targetBlockType = belowType;
+        doorY = targetPos.y - 1;
+      }
+    }
     
     if (targetBlockType !== null && isDoorBlock(targetBlockType)) {
       // Check reach distance to door
       const doorDx = targetPos.x + 0.5 - this.player.position.x;
-      const doorDy = targetPos.y + 0.5 - (this.player.position.y + 0.9);
+      const doorDy = doorY + 0.5 - (this.player.position.y + 0.9);
       const doorDz = targetPos.z + 0.5 - this.player.position.z;
       const doorDistance = Math.sqrt(doorDx * doorDx + doorDy * doorDy + doorDz * doorDz);
       
-      console.log(`🚪 Door detected! Distance: ${doorDistance.toFixed(2)}, reach: ${PLAYER_REACH}`);
-      
       if (doorDistance <= PLAYER_REACH) {
-        const toggled = this.chunkManager.toggleDoor(targetPos.x, targetPos.y, targetPos.z);
-        console.log(`🚪 Toggle result: ${toggled}`);
+        const toggled = this.chunkManager.toggleDoor(targetPos.x, doorY, targetPos.z);
         if (toggled) {
           // Play door sound
           getSoundManager().playBlockPlace(targetBlockType);
@@ -974,6 +974,31 @@ export class Game3D {
     // Update gamepad input
     const gamepad = getGamepadManager();
     gamepad.update(deltaTime);
+    
+    // Update crosshair position from right stick (smooth velocity-based movement)
+    if (!this.isPaused && !this.creativeInventory.isInventoryVisible()) {
+      const crosshairInput = gamepad.getCrosshairVector();
+      
+      // Update crosshair with smooth movement (handles acceleration/deceleration)
+      this.crosshair.updateGamepad(crosshairInput.x, crosshairInput.y, deltaTime);
+      
+      // Update block highlight if crosshair is moving or has input
+      if (this.crosshair.isMoving() || Math.abs(crosshairInput.x) > 0.01 || Math.abs(crosshairInput.y) > 0.01) {
+        const crosshairPos = this.crosshair.getPosition();
+        this.updateBlockHighlight(crosshairPos.x, crosshairPos.y);
+      }
+      
+      // Continuous zoom with triggers (L2 = zoom out, R2 = zoom in)
+      const zoomSpeed = 8 * deltaTime; // Zoom units per second
+      if (gamepad.isActionPressed(GameAction.ZoomIn)) {
+        this.zoom = Math.max(5, this.zoom - zoomSpeed);
+        this.updateCameraZoom();
+      }
+      if (gamepad.isActionPressed(GameAction.ZoomOut)) {
+        this.zoom = Math.min(26, this.zoom + zoomSpeed);
+        this.updateCameraZoom();
+      }
+    }
     
     // Handle gamepad attack state (continuous breaking)
     if (gamepad.isActionPressed(GameAction.Attack) && !this.isPaused) {

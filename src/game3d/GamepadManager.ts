@@ -82,6 +82,7 @@ export enum GameAction {
   // Inventory
   NextSlot = 'nextSlot',
   PrevSlot = 'prevSlot',
+  OpenInventory = 'openInventory', // Open creative inventory
   
   // Menu
   Pause = 'pause',
@@ -95,6 +96,12 @@ export enum GameAction {
   // Camera
   ZoomIn = 'zoomIn',
   ZoomOut = 'zoomOut',
+  
+  // Crosshair control (right stick)
+  CrosshairRight = 'crosshairRight',
+  CrosshairLeft = 'crosshairLeft',
+  CrosshairUp = 'crosshairUp',
+  CrosshairDown = 'crosshairDown',
 }
 
 /**
@@ -131,15 +138,26 @@ export interface GamepadSettings {
 // ============ DEFAULT MAPPINGS ============
 
 const DEFAULT_BUTTON_MAPPINGS: GamepadButtonMapping[] = [
-  // Actions
+  // Actions - DualShock style:
+  // Cross (A) = Jump
+  // Circle (B) = Attack (break blocks / left click)
+  // Square (X) = Use/Place blocks (right click)
+  // Triangle (Y) = Open Creative Inventory
   { button: GamepadButton.A, action: GameAction.Jump },
-  { button: GamepadButton.B, action: GameAction.Crouch },
-  { button: GamepadButton.RightTrigger, action: GameAction.Attack },
-  { button: GamepadButton.LeftTrigger, action: GameAction.Use },
+  { button: GamepadButton.B, action: GameAction.Attack },     // Circle = left click
+  { button: GamepadButton.X, action: GameAction.Use },        // Square = right click (place)
+  { button: GamepadButton.Y, action: GameAction.OpenInventory }, // Triangle = inventory
   
-  // Inventory
+  // Crouch with L3 (left stick press)
+  { button: GamepadButton.LeftStickPress, action: GameAction.Crouch },
+  
+  // Inventory slot cycling
   { button: GamepadButton.RightBumper, action: GameAction.NextSlot },
   { button: GamepadButton.LeftBumper, action: GameAction.PrevSlot },
+  
+  // Camera zoom with triggers
+  { button: GamepadButton.RightTrigger, action: GameAction.ZoomIn },  // R2 = zoom in
+  { button: GamepadButton.LeftTrigger, action: GameAction.ZoomOut },  // L2 = zoom out
   
   // Menu
   { button: GamepadButton.Start, action: GameAction.Pause },
@@ -149,14 +167,15 @@ const DEFAULT_BUTTON_MAPPINGS: GamepadButtonMapping[] = [
   { button: GamepadButton.DPadRight, action: GameAction.MenuRight },
   { button: GamepadButton.A, action: GameAction.MenuSelect },
   { button: GamepadButton.B, action: GameAction.MenuBack },
-  
-  // Camera zoom
-  { button: GamepadButton.Y, action: GameAction.ZoomIn },
-  { button: GamepadButton.X, action: GameAction.ZoomOut },
 ];
 
 const DEFAULT_AXIS_MAPPINGS: GamepadAxisMapping[] = [
-  // Left stick - movement
+  // Left stick - movement (isometric view)
+  // Standard gamepad Y-axis: UP = -1, DOWN = +1
+  // In isometric view: UP on screen = -X/-Z, DOWN on screen = +X/+Z
+  // The getMovementVector returns y = backward - forward, which is then
+  // applied as: moveX = -y, moveZ = -y
+  // So: MoveBackward→y>0→screen UP, MoveForward→y<0→screen DOWN
   {
     axis: GamepadAxis.LeftStickX,
     positiveAction: GameAction.MoveRight,
@@ -165,11 +184,23 @@ const DEFAULT_AXIS_MAPPINGS: GamepadAxisMapping[] = [
   },
   {
     axis: GamepadAxis.LeftStickY,
-    positiveAction: GameAction.MoveBackward,
-    negativeAction: GameAction.MoveForward,
+    positiveAction: GameAction.MoveForward,   // Stick DOWN → screen DOWN (natural)
+    negativeAction: GameAction.MoveBackward,  // Stick UP → screen UP (natural)
     deadzone: 0.15,
   },
-  // Right stick - could be used for camera in the future
+  // Right stick - crosshair control
+  {
+    axis: GamepadAxis.RightStickX,
+    positiveAction: GameAction.CrosshairRight,
+    negativeAction: GameAction.CrosshairLeft,
+    deadzone: 0.15,
+  },
+  {
+    axis: GamepadAxis.RightStickY,
+    positiveAction: GameAction.CrosshairDown,  // Down = move crosshair down
+    negativeAction: GameAction.CrosshairUp,    // Up = move crosshair up
+    deadzone: 0.15,
+  },
 ];
 
 const DEFAULT_SETTINGS: GamepadSettings = {
@@ -215,6 +246,7 @@ export const ACTION_NAMES: Record<GameAction, string> = {
   [GameAction.Use]: 'Use / Place',
   [GameAction.NextSlot]: 'Next Slot',
   [GameAction.PrevSlot]: 'Previous Slot',
+  [GameAction.OpenInventory]: 'Open Inventory',
   [GameAction.Pause]: 'Pause',
   [GameAction.MenuUp]: 'Menu Up',
   [GameAction.MenuDown]: 'Menu Down',
@@ -224,6 +256,10 @@ export const ACTION_NAMES: Record<GameAction, string> = {
   [GameAction.MenuBack]: 'Menu Back',
   [GameAction.ZoomIn]: 'Zoom In',
   [GameAction.ZoomOut]: 'Zoom Out',
+  [GameAction.CrosshairRight]: 'Crosshair Right',
+  [GameAction.CrosshairLeft]: 'Crosshair Left',
+  [GameAction.CrosshairUp]: 'Crosshair Up',
+  [GameAction.CrosshairDown]: 'Crosshair Down',
 };
 
 // ============ GAMEPAD STATE TRACKING ============
@@ -617,6 +653,29 @@ export class GamepadManager {
   }
   
   /**
+   * Get crosshair movement input from right stick
+   * Returns screen-space delta for crosshair position (x: right/left, y: down/up)
+   */
+  getCrosshairVector(): { x: number; y: number } {
+    if (!this.settings.enabled) return { x: 0, y: 0 };
+    
+    const left = this.actionStates.get(GameAction.CrosshairLeft) || 0;
+    const right = this.actionStates.get(GameAction.CrosshairRight) || 0;
+    const up = this.actionStates.get(GameAction.CrosshairUp) || 0;
+    const down = this.actionStates.get(GameAction.CrosshairDown) || 0;
+    
+    let x = right - left;
+    let y = down - up;
+    
+    // Apply sensitivity (lower = more precise aiming)
+    const crosshairSensitivity = this.settings.sensitivity * 0.8;
+    x *= crosshairSensitivity;
+    y *= crosshairSensitivity;
+    
+    return { x, y };
+  }
+  
+  /**
    * Trigger vibration/haptic feedback
    */
   vibrate(duration: number, weakMagnitude = 0.5, strongMagnitude = 0.5): void {
@@ -853,6 +912,17 @@ export class ZoomCommand implements GameCommand {
   
   execute(): void {
     this.onZoom(this.direction);
+  }
+}
+
+/**
+ * Open inventory command
+ */
+export class OpenInventoryCommand implements GameCommand {
+  constructor(private onOpen: () => void) {}
+  
+  execute(): void {
+    this.onOpen();
   }
 }
 

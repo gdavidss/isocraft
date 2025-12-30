@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { DroppedItem, DroppedItemData } from './DroppedItem';
 import { BlockType } from '../world/types';
 import { TextureManager3D } from './TextureManager3D';
-import type { InventoryHUD, HotbarItem } from './InventoryHUD';
+import type { InventoryHUD } from './InventoryHUD';
 import { getSoundManager } from './SoundManager';
 
 export class DroppedItemManager {

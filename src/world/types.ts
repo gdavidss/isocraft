@@ -64,6 +64,7 @@ export const BiomeID = {
   old_growth_birch_forest: 155,
   old_growth_spruce_taiga: 160,
   windswept_savanna: 163,
+  windswept_gravelly_hills: 131,
   bamboo_jungle: 168,
   soul_sand_valley: 170,
   crimson_forest: 171,

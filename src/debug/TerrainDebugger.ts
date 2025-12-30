@@ -49,7 +49,7 @@ const BIOME_NAMES: Record<number, string> = {
   182: 'stony_peaks',
 };
 
-const BLOCK_NAMES: Record<BlockType, string> = {
+const BLOCK_NAMES: Partial<Record<BlockType, string>> = {
   [BlockType.Air]: 'Air',
   [BlockType.Stone]: 'Stone',
   [BlockType.Dirt]: 'Dirt',
@@ -78,8 +78,6 @@ const BLOCK_NAMES: Record<BlockType, string> = {
   [BlockType.DeadBush]: 'DeadBush',
   [BlockType.TallGrass]: 'TallGrass',
   [BlockType.Fern]: 'Fern',
-  [BlockType.Flower]: 'Flower',
-  [BlockType.Mushroom]: 'Mushroom',
   [BlockType.Podzol]: 'Podzol',
   [BlockType.Mycelium]: 'Mycelium',
   [BlockType.RedSand]: 'RedSand',

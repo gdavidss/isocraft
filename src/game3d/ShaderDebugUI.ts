@@ -222,7 +222,7 @@ export class ShaderDebugUI {
     
     slider.addEventListener('input', () => {
       const value = parseFloat(slider.value);
-      this.settings[settingKey] = value;
+      (this.settings as unknown as Record<string, number | boolean>)[settingKey] = value;
       valueDisplay.textContent = value.toFixed(2);
       
       // Update all materials

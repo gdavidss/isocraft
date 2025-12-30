@@ -17,6 +17,7 @@ import {
   FACE_BRIGHTNESS,
   type BlockTextureConfig,
 } from './BlockIconUtils';
+import { getGamepadManager } from './GamepadManager';
 
 // All placeable blocks in creative mode (excludes Air, Water, vegetation)
 const CREATIVE_BLOCKS: BlockType[] = [
@@ -442,6 +443,18 @@ export class CreativeInventory {
   private inventoryHUD: InventoryHUD;
   private tooltip: HTMLDivElement;
   
+  // Gamepad navigation state
+  private focusedSlotIndex: number = 0;
+  private currentBlocks: BlockType[] = CREATIVE_BLOCKS;
+  private readonly GRID_COLUMNS = 9;
+  
+  // Store original gamepad callbacks to restore later
+  private savedGamepadCallbacks: {
+    onMenuNavigate?: (direction: 'up' | 'down' | 'left' | 'right') => void;
+    onMenuSelect?: () => void;
+    onMenuBack?: () => void;
+  } = {};
+  
   // Callbacks
   public onOpen?: () => void;
   public onClose?: () => void;
@@ -544,6 +557,19 @@ export class CreativeInventory {
       
       .creative-slot:active {
         transform: scale(0.95);
+      }
+      
+      .creative-slot.gamepad-focus {
+        transform: scale(1.1);
+        z-index: 10;
+        border-color: #00ff00 #00aa00 #00aa00 #00ff00;
+        box-shadow: 0 0 8px rgba(0, 255, 0, 0.6);
+        animation: gamepad-slot-pulse 0.8s ease-in-out infinite;
+      }
+      
+      @keyframes gamepad-slot-pulse {
+        0%, 100% { box-shadow: 0 0 8px rgba(0, 255, 0, 0.6); }
+        50% { box-shadow: 0 0 16px rgba(0, 255, 0, 0.9); }
       }
       
       .creative-slot-inner {
@@ -708,7 +734,7 @@ export class CreativeInventory {
           <!-- Slots will be generated here -->
         </div>
       </div>
-      <div class="creative-close-hint">Press E or ESC to close</div>
+      <div class="creative-close-hint">Press E, ESC, or Circle/B to close • D-Pad to navigate • Cross/A to select</div>
     `;
     
     // Populate grid
@@ -719,11 +745,17 @@ export class CreativeInventory {
     const searchInput = container.querySelector('#creative-search') as HTMLInputElement;
     searchInput.addEventListener('input', () => {
       const query = searchInput.value.toLowerCase();
-      const filteredBlocks = CREATIVE_BLOCKS.filter(blockType => {
+      this.currentBlocks = CREATIVE_BLOCKS.filter(blockType => {
         const name = BLOCK_NAMES[blockType] || BlockType[blockType];
         return name.toLowerCase().includes(query);
       });
-      this.populateGrid(grid, filteredBlocks);
+      this.populateGrid(grid, this.currentBlocks);
+      
+      // Reset focus to first slot after search
+      this.focusedSlotIndex = 0;
+      if (getGamepadManager().isConnected() && this.currentBlocks.length > 0) {
+        this.setFocusedSlot(0);
+      }
     });
     
     // Prevent clicks from propagating
@@ -929,6 +961,144 @@ export class CreativeInventory {
   }
   
   /**
+   * Set up gamepad navigation for the inventory
+   */
+  private setupGamepadNavigation(): void {
+    const gamepad = getGamepadManager();
+    
+    // Save current callbacks
+    this.savedGamepadCallbacks = {
+      onMenuNavigate: gamepad.onMenuNavigate,
+      onMenuSelect: gamepad.onMenuSelect,
+      onMenuBack: gamepad.onMenuBack,
+    };
+    
+    // Set up inventory-specific callbacks
+    gamepad.onMenuNavigate = (direction) => {
+      this.navigateSlot(direction);
+    };
+    
+    gamepad.onMenuSelect = () => {
+      this.selectFocusedSlot();
+    };
+    
+    gamepad.onMenuBack = () => {
+      this.hide();
+    };
+    
+    // Enable menu mode for gamepad
+    gamepad.setMenuMode(true);
+  }
+  
+  /**
+   * Restore previous gamepad callbacks
+   */
+  private restoreGamepadCallbacks(): void {
+    const gamepad = getGamepadManager();
+    
+    gamepad.onMenuNavigate = this.savedGamepadCallbacks.onMenuNavigate;
+    gamepad.onMenuSelect = this.savedGamepadCallbacks.onMenuSelect;
+    gamepad.onMenuBack = this.savedGamepadCallbacks.onMenuBack;
+    
+    // Disable menu mode
+    gamepad.setMenuMode(false);
+  }
+  
+  /**
+   * Navigate to a slot in the given direction
+   */
+  private navigateSlot(direction: 'up' | 'down' | 'left' | 'right'): void {
+    const totalSlots = this.currentBlocks.length;
+    if (totalSlots === 0) return;
+    
+    // Calculate rows
+    const rows = Math.ceil(totalSlots / this.GRID_COLUMNS);
+    const currentRow = Math.floor(this.focusedSlotIndex / this.GRID_COLUMNS);
+    const currentCol = this.focusedSlotIndex % this.GRID_COLUMNS;
+    
+    let newRow = currentRow;
+    let newCol = currentCol;
+    
+    switch (direction) {
+      case 'up':
+        newRow = currentRow > 0 ? currentRow - 1 : rows - 1;
+        break;
+      case 'down':
+        newRow = currentRow < rows - 1 ? currentRow + 1 : 0;
+        break;
+      case 'left':
+        if (currentCol > 0) {
+          newCol = currentCol - 1;
+        } else {
+          // Wrap to end of previous row
+          newCol = this.GRID_COLUMNS - 1;
+          newRow = currentRow > 0 ? currentRow - 1 : rows - 1;
+        }
+        break;
+      case 'right':
+        if (currentCol < this.GRID_COLUMNS - 1) {
+          newCol = currentCol + 1;
+        } else {
+          // Wrap to start of next row
+          newCol = 0;
+          newRow = currentRow < rows - 1 ? currentRow + 1 : 0;
+        }
+        break;
+    }
+    
+    // Calculate new index and clamp to valid range
+    let newIndex = newRow * this.GRID_COLUMNS + newCol;
+    
+    // Make sure we don't go beyond the last block
+    if (newIndex >= totalSlots) {
+      // If we went past the end, go to the last valid slot in that row
+      // or wrap around
+      if (direction === 'down' || direction === 'right') {
+        newIndex = 0; // Wrap to start
+      } else {
+        newIndex = totalSlots - 1; // Go to last slot
+      }
+    }
+    
+    this.setFocusedSlot(newIndex);
+    getSoundManager().playUIClick();
+  }
+  
+  /**
+   * Set the focused slot and update visual
+   */
+  private setFocusedSlot(index: number): void {
+    // Remove focus from old slot
+    const slots = this.container.querySelectorAll('.creative-slot');
+    slots.forEach(slot => slot.classList.remove('gamepad-focus'));
+    
+    // Set new focus
+    this.focusedSlotIndex = Math.max(0, Math.min(index, this.currentBlocks.length - 1));
+    
+    // Add focus to new slot
+    const newSlot = slots[this.focusedSlotIndex] as HTMLElement;
+    if (newSlot && this.currentBlocks[this.focusedSlotIndex] !== undefined) {
+      newSlot.classList.add('gamepad-focus');
+      
+      // Update tooltip
+      const blockType = this.currentBlocks[this.focusedSlotIndex];
+      const name = BLOCK_NAMES[blockType] || BlockType[blockType];
+      const rect = newSlot.getBoundingClientRect();
+      this.showTooltip(name, rect.right, rect.top);
+    }
+  }
+  
+  /**
+   * Select the currently focused slot (add block to inventory)
+   */
+  private selectFocusedSlot(): void {
+    if (this.focusedSlotIndex < this.currentBlocks.length) {
+      const blockType = this.currentBlocks[this.focusedSlotIndex];
+      this.addBlockToInventory(blockType);
+    }
+  }
+  
+  /**
    * Show the creative inventory
    */
   show(): void {
@@ -937,14 +1107,29 @@ export class CreativeInventory {
     this.isVisible = true;
     this.container.style.display = 'flex';
     
-    // Focus search input
+    // Focus search input (but don't focus if using gamepad)
     const searchInput = this.container.querySelector('#creative-search') as HTMLInputElement;
     searchInput.value = '';
-    searchInput.focus();
     
     // Reset grid
     const grid = this.container.querySelector('#creative-grid') as HTMLDivElement;
-    this.populateGrid(grid, CREATIVE_BLOCKS);
+    this.currentBlocks = [...CREATIVE_BLOCKS];
+    this.populateGrid(grid, this.currentBlocks);
+    
+    // Reset focus to first slot
+    this.focusedSlotIndex = 0;
+    
+    // Set up gamepad navigation
+    this.setupGamepadNavigation();
+    
+    // Set initial focus for gamepad (after a small delay to ensure grid is rendered)
+    setTimeout(() => {
+      if (getGamepadManager().isConnected()) {
+        this.setFocusedSlot(0);
+      } else {
+        searchInput.focus();
+      }
+    }, 50);
     
     getSoundManager().playUIClick();
     this.onOpen?.();
@@ -959,6 +1144,9 @@ export class CreativeInventory {
     this.isVisible = false;
     this.container.style.display = 'none';
     this.hideTooltip();
+    
+    // Restore gamepad callbacks
+    this.restoreGamepadCallbacks();
     
     this.onClose?.();
   }
