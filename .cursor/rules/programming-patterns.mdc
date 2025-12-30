@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+1) When required to fix a bug or add a new feature, take your time reading at /Users/guilhermedavid/game-dev/game-programming-patterns and see if any of those design patterns apply.
+In particular, follow those rules:
+- When adding player behavior, follow especially the state pattern
+- Decouple physics from other gameplay mechanic 
+- When adding control mappings always use the Command pattern
+- Use flyweight pattern whenever possible when rendering a lot of things on screen that can be reused.
+
+2) When debugging a tough bug, do not try to open the browser and taking screenshot in normal gameplay (unless that's the only way to tell). It is important to scaffold and reduce complexity to create reproducibility. This involves for example creating a debug structure or purposefully injecting state in the gameplay that forces a behavior to be reproduced. As a last resource, you can also add debug UI in the normal gameplay if useful. Make sure to clean up things if bugs are fixed. The user will tell you when bug is fixed, do not assume automatically even if you feel confident about it.
