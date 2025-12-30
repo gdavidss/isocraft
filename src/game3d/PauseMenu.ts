@@ -672,7 +672,7 @@ export class PauseMenu {
         <button class="mc-button wide" id="btn-resume">Back to Game</button>
         <button class="mc-button wide" id="btn-options">Options...</button>
         <button class="mc-button wide" id="btn-quit">Save and Quit to Title</button>
-        <div class="mc-footer-credit">Created by <a href="https://www.guidavid.com/" target="_blank" rel="noopener noreferrer">Gui Dávid</a></div>
+        <div class="mc-footer-credit">Created by <a href="https://www.guidavid.com/" target="_blank" rel="noopener noreferrer">Gui Dávid</a> · <a href="https://github.com/gdavidss/isocraft" target="_blank" rel="noopener noreferrer">GitHub</a></div>
       </div>
     `;
     
@@ -1265,11 +1265,21 @@ export class PauseMenu {
       <div class="mc-title">About</div>
       <div class="mc-about-container">
         <div class="mc-about-text">
-          This is an independent, open-source fan project created for educational and non-commercial purposes. Minecraft® is a trademark of Mojang Studios/Microsoft Corporation. All Minecraft-related assets, including but not limited to textures, sounds, and other media derived from Minecraft, are the property of Mojang Studios/Microsoft Corporation.
+          IsoCraft is an open-source, isometric Minecraft-inspired game built with Three.js that runs entirely in your browser.
         </div>
         
         <div class="mc-about-credit">
           Created by <a href="https://www.guidavid.com/" target="_blank" rel="noopener noreferrer" class="mc-about-link">Gui Dávid</a>
+        </div>
+        
+        <div class="mc-about-credit">
+          <a href="https://github.com/gdavidss/isocraft" target="_blank" rel="noopener noreferrer" class="mc-about-link">⭐ View on GitHub</a>
+        </div>
+        
+        <div class="mc-divider"></div>
+        
+        <div class="mc-about-text" style="font-size: 10px; color: #888;">
+          NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT. This is an independent fan project for educational and non-commercial purposes.
         </div>
         
         <div class="mc-divider"></div>

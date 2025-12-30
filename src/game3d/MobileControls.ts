@@ -12,6 +12,7 @@
 export interface MobileControlsCallbacks {
   onMove: (x: number, y: number) => void;
   onJump: () => void;
+  onOpenInventory: () => void;
   onZoom: (delta: number) => void;
   onBreakStart: (screenX: number, screenY: number) => void;
   onBreakEnd: () => void;
@@ -28,6 +29,8 @@ export class MobileControls {
   private container: HTMLDivElement;
   private analogStick: HTMLDivElement;
   private analogKnob: HTMLDivElement;
+  private jumpButton: HTMLDivElement;
+  private inventoryButton: HTMLDivElement;
   
   private callbacks: MobileControlsCallbacks;
   
@@ -66,9 +69,13 @@ export class MobileControls {
     this.container = this.createContainer();
     this.analogStick = this.createAnalogStick();
     this.analogKnob = this.createAnalogKnob();
+    this.jumpButton = this.createJumpButton();
+    this.inventoryButton = this.createInventoryButton();
     
     this.analogStick.appendChild(this.analogKnob);
     this.container.appendChild(this.analogStick);
+    this.container.appendChild(this.jumpButton);
+    this.container.appendChild(this.inventoryButton);
     document.body.appendChild(this.container);
     
     this.setupTouchHandlers();
@@ -128,20 +135,17 @@ export class MobileControls {
     analog.id = 'mobile-analog';
     analog.style.cssText = `
       position: absolute;
-      right: 30px;
-      bottom: 90px;
-      width: 120px;
-      height: 120px;
+      right: 20px;
+      bottom: 95px;
+      width: 90px;
+      height: 90px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
-      border: 3px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.2);
       pointer-events: auto;
       touch-action: none;
-      box-shadow: 
-        inset 0 0 20px rgba(0, 0, 0, 0.2),
-        0 4px 15px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
     `;
     return analog;
   }
@@ -154,26 +158,99 @@ export class MobileControls {
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 50px;
-      height: 50px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.25));
-      border: 2px solid rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.35);
+      border: 2px solid rgba(255, 255, 255, 0.4);
       pointer-events: none;
-      box-shadow: 
-        0 4px 10px rgba(0, 0, 0, 0.4),
-        inset 0 -2px 5px rgba(0, 0, 0, 0.2);
       transition: transform 0.05s ease-out;
     `;
     return knob;
   }
   
+  private createJumpButton(): HTMLDivElement {
+    const button = document.createElement('div');
+    button.id = 'mobile-jump';
+    button.style.cssText = `
+      position: absolute;
+      left: 20px;
+      bottom: 95px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      pointer-events: auto;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+      user-select: none;
+      -webkit-user-select: none;
+    `;
+    
+    // Simple up arrow
+    button.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 19V5M5 12l7-7 7 7"/>
+      </svg>
+    `;
+    
+    return button;
+  }
+  
+  private createInventoryButton(): HTMLDivElement {
+    const button = document.createElement('div');
+    button.id = 'mobile-inventory';
+    button.style.cssText = `
+      position: absolute;
+      left: 20px;
+      bottom: 150px;
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      pointer-events: auto;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+      user-select: none;
+      -webkit-user-select: none;
+    `;
+    
+    // Simple 3 dots (menu)
+    button.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="rgba(255,255,255,0.7)">
+        <circle cx="12" cy="5" r="2"/>
+        <circle cx="12" cy="12" r="2"/>
+        <circle cx="12" cy="19" r="2"/>
+      </svg>
+    `;
+    
+    return button;
+  }
+  
   private setupTouchHandlers(): void {
-    // Analog stick touch handling (tap center to jump)
+    // Analog stick touch handling
     this.analogStick.addEventListener('touchstart', this.handleAnalogStart.bind(this), { passive: false });
     this.analogStick.addEventListener('touchmove', this.handleAnalogMove.bind(this), { passive: false });
     this.analogStick.addEventListener('touchend', this.handleAnalogEnd.bind(this), { passive: false });
     this.analogStick.addEventListener('touchcancel', this.handleAnalogEnd.bind(this), { passive: false });
+    
+    // Jump button handling
+    this.jumpButton.addEventListener('touchstart', this.handleJumpStart.bind(this), { passive: false });
+    this.jumpButton.addEventListener('touchend', this.handleJumpEnd.bind(this), { passive: false });
+    
+    // Inventory button handling
+    this.inventoryButton.addEventListener('touchstart', this.handleInventoryStart.bind(this), { passive: false });
+    this.inventoryButton.addEventListener('touchend', this.handleInventoryEnd.bind(this), { passive: false });
     
     // Global touch handling for pinch zoom and break/place
     document.addEventListener('touchstart', this.handleGlobalTouchStart.bind(this), { passive: false });
@@ -215,7 +292,7 @@ export class MobileControls {
     const dy = touch.clientY - this.analogStartY;
     
     // Clamp to analog stick radius
-    const maxRadius = 45; // Half of analog stick size minus knob size
+    const maxRadius = 32; // Half of analog stick size minus knob size
     const distance = Math.sqrt(dx * dx + dy * dy);
     const clampedDistance = Math.min(distance, maxRadius);
     
@@ -251,12 +328,6 @@ export class MobileControls {
     const touch = Array.from(e.changedTouches).find(t => t.identifier === this.analogTouchId);
     if (!touch) return;
     
-    // Check if this was a tap (quick touch without movement) - trigger jump
-    const touchDuration = Date.now() - this.analogTouchStartTime;
-    if (!this.analogMoved && touchDuration < TAP_THRESHOLD_MS) {
-      this.callbacks.onJump();
-    }
-    
     this.analogActive = false;
     this.analogTouchId = null;
     this.moveX = 0;
@@ -267,6 +338,50 @@ export class MobileControls {
     
     // Fire callback with zero movement
     this.callbacks.onMove(0, 0);
+  }
+  
+  // ============ JUMP BUTTON HANDLERS ============
+  
+  private handleJumpStart(e: TouchEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Subtle visual feedback
+    this.jumpButton.style.transform = 'scale(0.92)';
+    this.jumpButton.style.background = 'rgba(255, 255, 255, 0.25)';
+    
+    this.callbacks.onJump();
+  }
+  
+  private handleJumpEnd(e: TouchEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Reset visual
+    this.jumpButton.style.transform = 'scale(1)';
+    this.jumpButton.style.background = 'rgba(255, 255, 255, 0.12)';
+  }
+  
+  // ============ INVENTORY BUTTON HANDLERS ============
+  
+  private handleInventoryStart(e: TouchEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Subtle visual feedback
+    this.inventoryButton.style.transform = 'scale(0.92)';
+    this.inventoryButton.style.background = 'rgba(255, 255, 255, 0.25)';
+    
+    this.callbacks.onOpenInventory();
+  }
+  
+  private handleInventoryEnd(e: TouchEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Reset visual
+    this.inventoryButton.style.transform = 'scale(1)';
+    this.inventoryButton.style.background = 'rgba(255, 255, 255, 0.12)';
   }
   
   // ============ GLOBAL TOUCH HANDLERS (Pinch zoom + Break/Place) ============
@@ -444,6 +559,7 @@ export class MobileControls {
       if (el.id === 'mobile-controls' || 
           el.id === 'mobile-analog' || 
           el.id === 'mobile-jump' ||
+          el.id === 'mobile-inventory' ||
           el.id === 'hotbar' ||
           el.id === 'creative-inventory' ||
           el.id === 'pause-menu' ||

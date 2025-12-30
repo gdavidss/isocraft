@@ -203,6 +203,11 @@ export class Game3D {
           }
         }
       },
+      onOpenInventory: () => {
+        if (!this.isPaused) {
+          this.creativeInventory.toggle();
+        }
+      },
       onZoom: (delta) => {
         if (!this.isPaused) {
           this.zoom += delta;
