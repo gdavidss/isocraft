@@ -28,7 +28,6 @@ export class MobileControls {
   private container: HTMLDivElement;
   private analogStick: HTMLDivElement;
   private analogKnob: HTMLDivElement;
-  private jumpButton: HTMLDivElement;
   
   private callbacks: MobileControlsCallbacks;
   
@@ -37,6 +36,8 @@ export class MobileControls {
   private analogStartX = 0;
   private analogStartY = 0;
   private analogTouchId: number | null = null;
+  private analogTouchStartTime = 0;
+  private analogMoved = false;
   
   // Movement output (-1 to 1)
   private moveX = 0;
@@ -65,11 +66,9 @@ export class MobileControls {
     this.container = this.createContainer();
     this.analogStick = this.createAnalogStick();
     this.analogKnob = this.createAnalogKnob();
-    this.jumpButton = this.createJumpButton();
     
     this.analogStick.appendChild(this.analogKnob);
     this.container.appendChild(this.analogStick);
-    this.container.appendChild(this.jumpButton);
     document.body.appendChild(this.container);
     
     this.setupTouchHandlers();
@@ -169,56 +168,12 @@ export class MobileControls {
     return knob;
   }
   
-  private createJumpButton(): HTMLDivElement {
-    const button = document.createElement('div');
-    button.id = 'mobile-jump';
-    button.style.cssText = `
-      position: absolute;
-      right: 170px;
-      bottom: 100px;
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, rgba(100, 200, 255, 0.5), rgba(50, 150, 220, 0.3));
-      border: 3px solid rgba(100, 200, 255, 0.6);
-      pointer-events: auto;
-      touch-action: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Minecraft', monospace;
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.9);
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-      box-shadow: 
-        0 4px 15px rgba(0, 0, 0, 0.3),
-        inset 0 -3px 10px rgba(0, 0, 0, 0.2);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      user-select: none;
-      -webkit-user-select: none;
-    `;
-    
-    // Jump icon (arrow up)
-    button.innerHTML = `
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 19V5M5 12l7-7 7 7"/>
-      </svg>
-    `;
-    
-    return button;
-  }
-  
   private setupTouchHandlers(): void {
-    // Analog stick touch handling
+    // Analog stick touch handling (tap center to jump)
     this.analogStick.addEventListener('touchstart', this.handleAnalogStart.bind(this), { passive: false });
     this.analogStick.addEventListener('touchmove', this.handleAnalogMove.bind(this), { passive: false });
     this.analogStick.addEventListener('touchend', this.handleAnalogEnd.bind(this), { passive: false });
     this.analogStick.addEventListener('touchcancel', this.handleAnalogEnd.bind(this), { passive: false });
-    
-    // Jump button handling
-    this.jumpButton.addEventListener('touchstart', this.handleJumpStart.bind(this), { passive: false });
-    this.jumpButton.addEventListener('touchend', this.handleJumpEnd.bind(this), { passive: false });
     
     // Global touch handling for pinch zoom and break/place
     document.addEventListener('touchstart', this.handleGlobalTouchStart.bind(this), { passive: false });
@@ -238,6 +193,8 @@ export class MobileControls {
     const touch = e.changedTouches[0];
     this.analogTouchId = touch.identifier;
     this.analogActive = true;
+    this.analogTouchStartTime = Date.now();
+    this.analogMoved = false;
     
     const rect = this.analogStick.getBoundingClientRect();
     this.analogStartX = rect.left + rect.width / 2;
@@ -262,6 +219,11 @@ export class MobileControls {
     const distance = Math.sqrt(dx * dx + dy * dy);
     const clampedDistance = Math.min(distance, maxRadius);
     
+    // Track if analog has moved significantly (for tap detection)
+    if (distance > 10) {
+      this.analogMoved = true;
+    }
+    
     let normX = 0;
     let normY = 0;
     
@@ -274,8 +236,9 @@ export class MobileControls {
     this.analogKnob.style.transform = `translate(calc(-50% + ${normX}px), calc(-50% + ${normY}px))`;
     
     // Calculate movement values (-1 to 1)
+    // Invert Y so that dragging up moves forward
     this.moveX = normX / maxRadius;
-    this.moveY = normY / maxRadius;
+    this.moveY = -normY / maxRadius;
     
     // Fire callback
     this.callbacks.onMove(this.moveX, this.moveY);
@@ -288,6 +251,12 @@ export class MobileControls {
     const touch = Array.from(e.changedTouches).find(t => t.identifier === this.analogTouchId);
     if (!touch) return;
     
+    // Check if this was a tap (quick touch without movement) - trigger jump
+    const touchDuration = Date.now() - this.analogTouchStartTime;
+    if (!this.analogMoved && touchDuration < TAP_THRESHOLD_MS) {
+      this.callbacks.onJump();
+    }
+    
     this.analogActive = false;
     this.analogTouchId = null;
     this.moveX = 0;
@@ -298,28 +267,6 @@ export class MobileControls {
     
     // Fire callback with zero movement
     this.callbacks.onMove(0, 0);
-  }
-  
-  // ============ JUMP BUTTON HANDLERS ============
-  
-  private handleJumpStart(e: TouchEvent): void {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Visual feedback
-    this.jumpButton.style.transform = 'scale(0.9)';
-    this.jumpButton.style.background = 'radial-gradient(circle at 30% 30%, rgba(150, 220, 255, 0.7), rgba(80, 180, 240, 0.5))';
-    
-    this.callbacks.onJump();
-  }
-  
-  private handleJumpEnd(e: TouchEvent): void {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Reset visual
-    this.jumpButton.style.transform = 'scale(1)';
-    this.jumpButton.style.background = 'radial-gradient(circle at 30% 30%, rgba(100, 200, 255, 0.5), rgba(50, 150, 220, 0.3))';
   }
   
   // ============ GLOBAL TOUCH HANDLERS (Pinch zoom + Break/Place) ============
