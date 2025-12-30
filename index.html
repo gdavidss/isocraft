@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IsoCraft - Minecraft Biomes</title>
+    <style>
+      @font-face {
+        font-family: 'Minecraft';
+        src: url('https://cdn.jsdelivr.net/gh/South-Paw/typeface-minecraft@master/files/minecraft.woff2') format('woff2'),
+             url('https://cdn.jsdelivr.net/gh/South-Paw/typeface-minecraft@master/files/minecraft.woff') format('woff');
+        font-weight: normal;
+        font-style: normal;
+        font-display: swap;
+      }
+      
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #1a1a2e;
+        cursor: none;
+      }
+      
+      canvas {
+        display: block;
+      }
+      
+      #loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        font-family: 'Minecraft', monospace;
+        color: #fff;
+        image-rendering: pixelated;
+        -webkit-font-smoothing: none;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      
+      #loading h1 {
+        font-size: 32px;
+        margin-bottom: 30px;
+        color: #ffff55;
+        text-shadow: 3px 3px 0 #333300;
+        letter-spacing: 2px;
+      }
+      
+      .loading-bar-container {
+        width: 300px;
+        height: 20px;
+        background: #222;
+        border: 3px solid;
+        border-top-color: #1a1a1a;
+        border-left-color: #1a1a1a;
+        border-right-color: #555;
+        border-bottom-color: #555;
+        margin-bottom: 20px;
+        position: relative;
+      }
+      
+      .loading-bar {
+        height: 100%;
+        background: linear-gradient(to bottom, #55ff55 0%, #00aa00 50%, #007700 100%);
+        animation: loading-progress 2s ease-in-out infinite;
+        box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3);
+      }
+      
+      @keyframes loading-progress {
+        0% { width: 0%; }
+        50% { width: 70%; }
+        100% { width: 100%; }
+      }
+      
+      .loading-text {
+        font-size: 16px;
+        color: #aaa;
+        text-shadow: 2px 2px 0 #222;
+      }
+      
+      .loading-subtitle {
+        font-size: 12px;
+        color: #555;
+        margin-top: 30px;
+        text-shadow: 1px 1px 0 #111;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">
+      <h1>ISOCRAFT</h1>
+      <div class="loading-bar-container">
+        <div class="loading-bar"></div>
+      </div>
+      <div class="loading-text">Loading world...</div>
+      <div class="loading-subtitle">Building terrain with cubiomes</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+
