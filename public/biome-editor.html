@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biome → Block Mapping Editor</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --accent: #e94560;
+      --text: #eaeaea;
+      --muted: #7f8c8d;
+      --success: #2ecc71;
+      --warning: #f39c12;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    h1 {
+      text-align: center;
+      color: var(--accent);
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+    
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4);
+    }
+    
+    button.secondary {
+      background: var(--surface);
+      border: 1px solid var(--muted);
+    }
+    
+    .filter-row {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    
+    .filter-btn {
+      background: var(--surface);
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    
+    .filter-btn.active {
+      background: var(--accent);
+    }
+    
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 15px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    
+    .biome-card {
+      background: var(--surface);
+      border-radius: 10px;
+      padding: 15px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      transition: all 0.2s;
+    }
+    
+    .biome-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    
+    .biome-card.modified {
+      border: 2px solid var(--warning);
+    }
+    
+    .preview {
+      width: 64px;
+      height: 64px;
+      border-radius: 8px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      position: relative;
+      overflow: hidden;
+      image-rendering: pixelated;
+    }
+    
+    .preview canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+    
+    .biome-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .biome-name {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+    
+    .biome-id {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    
+    .biome-select {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--muted);
+      background: var(--bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+    }
+    
+    .biome-select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    .category-header {
+      grid-column: 1 / -1;
+      background: linear-gradient(90deg, var(--accent), transparent);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+      margin-top: 20px;
+    }
+    
+    .category-header:first-child {
+      margin-top: 0;
+    }
+    
+    .output-section {
+      margin-top: 40px;
+      max-width: 1400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    
+    .output-section h2 {
+      color: var(--accent);
+      margin-bottom: 15px;
+    }
+    
+    textarea {
+      width: 100%;
+      height: 400px;
+      background: var(--surface);
+      border: 1px solid var(--muted);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 15px;
+      resize: vertical;
+    }
+    
+    .stats {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    
+    .stat {
+      background: var(--surface);
+      padding: 10px 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--accent);
+    }
+    
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    
+    .block-legend {
+      max-width: 1400px;
+      margin: 30px auto;
+      background: var(--surface);
+      padding: 20px;
+      border-radius: 10px;
+    }
+    
+    .block-legend summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: bold;
+      margin-bottom: 15px;
+    }
+    
+    .block-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 15px;
+    }
+    
+    .block-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      background: var(--bg);
+      border-radius: 6px;
+    }
+    
+    .block-preview {
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      image-rendering: pixelated;
+      overflow: hidden;
+    }
+    
+    .block-preview canvas {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+    }
+    
+    .block-name {
+      font-size: 12px;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <h1>🎨 Biome → Block Mapping Editor</h1>
+  <p class="subtitle">Fix biome textures and export the corrected mapping (with colormap tinting!)</p>
+  
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value" id="totalBiomes">0</div>
+      <div class="stat-label">Total Biomes</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="modifiedCount">0</div>
+      <div class="stat-label">Modified</div>
+    </div>
+  </div>
+  
+  <div class="controls">
+    <button onclick="exportMapping()">📋 Export TypeScript Code</button>
+    <button onclick="exportJSON()" class="secondary">💾 Export JSON</button>
+    <button onclick="resetAll()" class="secondary">🔄 Reset All</button>
+  </div>
+  
+  <div class="filter-row">
+    <button class="filter-btn active" onclick="filterBiomes('all', this)">All</button>
+    <button class="filter-btn" onclick="filterBiomes('ocean', this)">🌊 Ocean</button>
+    <button class="filter-btn" onclick="filterBiomes('plains', this)">🌾 Plains</button>
+    <button class="filter-btn" onclick="filterBiomes('forest', this)">🌲 Forest</button>
+    <button class="filter-btn" onclick="filterBiomes('jungle', this)">🌴 Jungle</button>
+    <button class="filter-btn" onclick="filterBiomes('desert', this)">🏜️ Desert</button>
+    <button class="filter-btn" onclick="filterBiomes('savanna', this)">🦁 Savanna</button>
+    <button class="filter-btn" onclick="filterBiomes('beach', this)">🏖️ Beach</button>
+    <button class="filter-btn" onclick="filterBiomes('mountain', this)">🏔️ Mountain</button>
+    <button class="filter-btn" onclick="filterBiomes('snow', this)">❄️ Snow</button>
+    <button class="filter-btn" onclick="filterBiomes('swamp', this)">🐸 Swamp</button>
+    <button class="filter-btn" onclick="filterBiomes('badlands', this)">🟤 Badlands</button>
+    <button class="filter-btn" onclick="filterBiomes('mushroom', this)">🍄 Mushroom</button>
+    <button class="filter-btn" onclick="filterBiomes('nether', this)">🔥 Nether</button>
+    <button class="filter-btn" onclick="filterBiomes('end', this)">🌌 End</button>
+    <button class="filter-btn" onclick="filterBiomes('cave', this)">🕳️ Cave</button>
+    <button class="filter-btn" onclick="filterBiomes('modified', this)">✏️ Modified</button>
+  </div>
+  
+  <div class="loading" id="loadingMsg">Loading textures and colormaps...</div>
+  <div class="grid" id="biomeGrid" style="display:none"></div>
+  
+  <details class="block-legend">
+    <summary>📦 Available Block Textures (click to expand)</summary>
+    <div class="block-grid" id="blockGrid"></div>
+  </details>
+  
+  <div class="output-section">
+    <h2>📝 Generated Code</h2>
+    <textarea id="outputCode" readonly placeholder="Click 'Export TypeScript Code' to generate..."></textarea>
+  </div>
+
+  <script>
+    // Block types with textures
+    const BLOCK_TYPES = [
+      { id: 0, name: 'Grass', texture: '/textures/grass_block_top.png', tinted: true, tintType: 'grass' },
+      { id: 1, name: 'Dirt', texture: '/textures/dirt.png', tinted: false },
+      { id: 2, name: 'CoarseDirt', texture: '/textures/coarse_dirt.png', tinted: false },
+      { id: 3, name: 'Sand', texture: '/textures/sand.png', tinted: false },
+      { id: 4, name: 'RedSand', texture: '/textures/red_sand.png', tinted: false },
+      { id: 5, name: 'Stone', texture: '/textures/stone.png', tinted: false },
+      { id: 6, name: 'Gravel', texture: '/textures/gravel.png', tinted: false },
+      { id: 7, name: 'Water', texture: '/textures/water_still.png', tinted: true, tintType: 'water' },
+      { id: 8, name: 'Snow', texture: '/textures/snow.png', tinted: false },
+      { id: 9, name: 'PowderSnow', texture: '/textures/powder_snow.png', tinted: false },
+      { id: 10, name: 'Ice', texture: '/textures/ice.png', tinted: false },
+      { id: 11, name: 'PackedIce', texture: '/textures/packed_ice.png', tinted: false },
+      { id: 12, name: 'BlueIce', texture: '/textures/blue_ice.png', tinted: false },
+      { id: 13, name: 'Clay', texture: '/textures/clay.png', tinted: false },
+      { id: 14, name: 'Mud', texture: '/textures/mud.png', tinted: false },
+      { id: 15, name: 'Podzol', texture: '/textures/podzol_top.png', tinted: false },
+      { id: 16, name: 'Mycelium', texture: '/textures/mycelium_top.png', tinted: false },
+      { id: 17, name: 'MossBlock', texture: '/textures/moss_block.png', tinted: false },
+      { id: 18, name: 'Terracotta', texture: '/textures/terracotta.png', tinted: false },
+      { id: 19, name: 'Netherrack', texture: '/textures/netherrack.png', tinted: false },
+      { id: 20, name: 'SoulSand', texture: '/textures/soul_sand.png', tinted: false },
+      { id: 21, name: 'SoulSoil', texture: '/textures/soul_soil.png', tinted: false },
+      { id: 22, name: 'CrimsonNylium', texture: '/textures/crimson_nylium.png', tinted: false },
+      { id: 23, name: 'WarpedNylium', texture: '/textures/warped_nylium.png', tinted: false },
+      { id: 24, name: 'Basalt', texture: '/textures/basalt_top.png', tinted: false },
+      { id: 25, name: 'EndStone', texture: '/textures/end_stone.png', tinted: false },
+      { id: 26, name: 'RootedDirt', texture: '/textures/rooted_dirt.png', tinted: false },
+    ];
+    
+    // Biome-specific grass colors (from Minecraft wiki)
+    const BIOME_GRASS_COLORS = {
+      // Default
+      default: [145, 189, 89],
+      // Plains variants
+      1: [145, 189, 89],   // plains
+      129: [145, 189, 89], // sunflower_plains
+      177: [131, 187, 108], // meadow
+      // Forest variants
+      4: [121, 192, 90],   // forest
+      18: [121, 192, 90],  // wooded_hills
+      27: [136, 186, 98],  // birch_forest
+      28: [136, 186, 98],  // birch_forest_hills
+      29: [80, 120, 50],   // dark_forest (darker)
+      132: [121, 192, 90], // flower_forest
+      155: [136, 186, 98], // tall_birch_forest
+      156: [136, 186, 98], // tall_birch_hills
+      157: [80, 120, 50],  // dark_forest_hills
+      183: [182, 219, 179], // cherry_grove (pink-ish)
+      // Taiga (podzol - not tinted)
+      5: [134, 167, 105],  // taiga
+      19: [134, 167, 105], // taiga_hills
+      // Jungle - lush green
+      21: [89, 201, 60],   // jungle
+      22: [89, 201, 60],   // jungle_hills
+      23: [89, 201, 60],   // sparse_jungle
+      149: [89, 201, 60],  // modified_jungle
+      151: [89, 201, 60],  // modified_jungle_edge
+      168: [89, 201, 60],  // bamboo_jungle
+      169: [89, 201, 60],  // bamboo_jungle_hills
+      // Savanna - dry/yellow
+      37: [191, 183, 85],  // savanna
+      38: [191, 183, 85],  // savanna_plateau
+      163: [191, 183, 85], // shattered_savanna
+      164: [191, 183, 85], // shattered_savanna_plateau
+      // Swamp - murky green
+      6: [106, 112, 57],   // swamp
+      134: [106, 112, 57], // swamp_hills
+      185: [141, 154, 50], // mangrove_swamp
+      // Snowy
+      12: [128, 180, 151], // snowy_plains
+      30: [128, 180, 151], // snowy_taiga
+      // Mountain
+      3: [128, 180, 151],  // windswept_hills
+      36: [128, 180, 151], // windswept_forest
+      // Badlands - dead grass
+      39: [144, 129, 77],  // badlands
+      40: [144, 129, 77],  // wooded_badlands
+    };
+    
+    // Biome-specific water colors
+    const BIOME_WATER_COLORS = {
+      default: [63, 118, 228],
+      // Ocean variants
+      0: [63, 118, 228],   // ocean
+      7: [63, 118, 228],   // river
+      24: [48, 96, 195],   // deep_ocean (darker)
+      44: [67, 213, 238],  // warm_ocean (turquoise)
+      45: [69, 173, 242],  // lukewarm_ocean
+      46: [61, 87, 214],   // cold_ocean
+      47: [67, 213, 238],  // deep_warm_ocean
+      48: [69, 173, 242],  // deep_lukewarm_ocean
+      49: [61, 87, 214],   // deep_cold_ocean
+      // Swamp - murky
+      6: [97, 123, 100],   // swamp
+      134: [97, 123, 100], // swamp_hills
+      185: [62, 93, 83],   // mangrove_swamp (darker)
+    };
+    
+    // All biomes
+    const ALL_BIOMES = [
+      // Ocean biomes
+      { id: 0, name: 'ocean', category: 'ocean' },
+      { id: 7, name: 'river', category: 'ocean' },
+      { id: 10, name: 'frozen_ocean', category: 'ocean' },
+      { id: 11, name: 'frozen_river', category: 'ocean' },
+      { id: 24, name: 'deep_ocean', category: 'ocean' },
+      { id: 44, name: 'warm_ocean', category: 'ocean' },
+      { id: 45, name: 'lukewarm_ocean', category: 'ocean' },
+      { id: 46, name: 'cold_ocean', category: 'ocean' },
+      { id: 47, name: 'deep_warm_ocean', category: 'ocean' },
+      { id: 48, name: 'deep_lukewarm_ocean', category: 'ocean' },
+      { id: 49, name: 'deep_cold_ocean', category: 'ocean' },
+      { id: 50, name: 'deep_frozen_ocean', category: 'ocean' },
+      
+      // Plains
+      { id: 1, name: 'plains', category: 'plains' },
+      { id: 129, name: 'sunflower_plains', category: 'plains' },
+      { id: 177, name: 'meadow', category: 'plains' },
+      
+      // Forest
+      { id: 4, name: 'forest', category: 'forest' },
+      { id: 18, name: 'wooded_hills', category: 'forest' },
+      { id: 27, name: 'birch_forest', category: 'forest' },
+      { id: 28, name: 'birch_forest_hills', category: 'forest' },
+      { id: 29, name: 'dark_forest', category: 'forest' },
+      { id: 132, name: 'flower_forest', category: 'forest' },
+      { id: 155, name: 'tall_birch_forest', category: 'forest' },
+      { id: 156, name: 'tall_birch_hills', category: 'forest' },
+      { id: 157, name: 'dark_forest_hills', category: 'forest' },
+      { id: 160, name: 'old_growth_birch_forest', category: 'forest' },
+      { id: 161, name: 'old_growth_birch_forest_hills', category: 'forest' },
+      { id: 183, name: 'cherry_grove', category: 'forest' },
+      { id: 5, name: 'taiga', category: 'forest' },
+      { id: 19, name: 'taiga_hills', category: 'forest' },
+      { id: 32, name: 'old_growth_pine_taiga', category: 'forest' },
+      { id: 33, name: 'old_growth_pine_taiga_hills', category: 'forest' },
+      { id: 34, name: 'old_growth_spruce_taiga', category: 'forest' },
+      { id: 35, name: 'old_growth_spruce_taiga_hills', category: 'forest' },
+      { id: 133, name: 'taiga_mountains', category: 'forest' },
+      
+      // Jungle
+      { id: 21, name: 'jungle', category: 'jungle' },
+      { id: 22, name: 'jungle_hills', category: 'jungle' },
+      { id: 23, name: 'sparse_jungle', category: 'jungle' },
+      { id: 149, name: 'modified_jungle', category: 'jungle' },
+      { id: 151, name: 'modified_jungle_edge', category: 'jungle' },
+      { id: 168, name: 'bamboo_jungle', category: 'jungle' },
+      { id: 169, name: 'bamboo_jungle_hills', category: 'jungle' },
+      
+      // Desert
+      { id: 2, name: 'desert', category: 'desert' },
+      { id: 17, name: 'desert_hills', category: 'desert' },
+      { id: 130, name: 'desert_lakes', category: 'desert' },
+      
+      // Savanna
+      { id: 37, name: 'savanna', category: 'savanna' },
+      { id: 38, name: 'savanna_plateau', category: 'savanna' },
+      { id: 163, name: 'shattered_savanna', category: 'savanna' },
+      { id: 164, name: 'shattered_savanna_plateau', category: 'savanna' },
+      
+      // Beach
+      { id: 16, name: 'beach', category: 'beach' },
+      { id: 25, name: 'stony_shore', category: 'beach' },
+      { id: 26, name: 'snowy_beach', category: 'beach' },
+      
+      // Mountain
+      { id: 3, name: 'windswept_hills', category: 'mountain' },
+      { id: 20, name: 'mountain_edge', category: 'mountain' },
+      { id: 36, name: 'windswept_forest', category: 'mountain' },
+      { id: 131, name: 'windswept_gravelly_hills', category: 'mountain' },
+      { id: 162, name: 'modified_gravelly_mountains', category: 'mountain' },
+      { id: 181, name: 'jagged_peaks', category: 'mountain' },
+      { id: 182, name: 'stony_peaks', category: 'mountain' },
+      
+      // Snow
+      { id: 12, name: 'snowy_plains', category: 'snow' },
+      { id: 13, name: 'snowy_mountains', category: 'snow' },
+      { id: 30, name: 'snowy_taiga', category: 'snow' },
+      { id: 31, name: 'snowy_taiga_hills', category: 'snow' },
+      { id: 140, name: 'ice_spikes', category: 'snow' },
+      { id: 158, name: 'snowy_taiga_mountains', category: 'snow' },
+      { id: 178, name: 'grove', category: 'snow' },
+      { id: 179, name: 'snowy_slopes', category: 'snow' },
+      { id: 180, name: 'frozen_peaks', category: 'snow' },
+      
+      // Swamp
+      { id: 6, name: 'swamp', category: 'swamp' },
+      { id: 134, name: 'swamp_hills', category: 'swamp' },
+      { id: 185, name: 'mangrove_swamp', category: 'swamp' },
+      
+      // Badlands
+      { id: 39, name: 'badlands', category: 'badlands' },
+      { id: 40, name: 'wooded_badlands', category: 'badlands' },
+      { id: 41, name: 'badlands_plateau', category: 'badlands' },
+      { id: 165, name: 'eroded_badlands', category: 'badlands' },
+      { id: 166, name: 'modified_wooded_badlands_plateau', category: 'badlands' },
+      { id: 167, name: 'modified_badlands_plateau', category: 'badlands' },
+      
+      // Mushroom
+      { id: 14, name: 'mushroom_fields', category: 'mushroom' },
+      { id: 15, name: 'mushroom_field_shore', category: 'mushroom' },
+      
+      // Nether
+      { id: 8, name: 'nether_wastes', category: 'nether' },
+      { id: 170, name: 'soul_sand_valley', category: 'nether' },
+      { id: 171, name: 'crimson_forest', category: 'nether' },
+      { id: 172, name: 'warped_forest', category: 'nether' },
+      { id: 173, name: 'basalt_deltas', category: 'nether' },
+      
+      // End
+      { id: 9, name: 'the_end', category: 'end' },
+      
+      // Cave
+      { id: 174, name: 'dripstone_caves', category: 'cave' },
+      { id: 175, name: 'lush_caves', category: 'cave' },
+      { id: 184, name: 'deep_dark', category: 'cave' },
+    ];
+    
+    // Default mapping - FIXED: frozen biomes use Ice
+    const DEFAULT_MAPPING = {
+      // Ocean/River -> Water
+      0: 7, 7: 7, 24: 7, 44: 7, 45: 7, 46: 7, 47: 7, 48: 7, 49: 7,
+      // Frozen Ocean/River -> Ice (not water!)
+      10: 10, 11: 10, 50: 10,
+      // Plains -> Grass
+      1: 0, 129: 0, 177: 0,
+      // Forest -> Grass
+      4: 0, 18: 0, 27: 0, 28: 0, 29: 0, 132: 0, 155: 0, 156: 0, 157: 0, 160: 0, 161: 0, 183: 0,
+      // Taiga -> Podzol
+      5: 15, 19: 15, 32: 15, 33: 15, 34: 15, 35: 15, 133: 15,
+      // Jungle -> Grass
+      21: 0, 22: 0, 23: 0, 149: 0, 151: 0, 168: 0, 169: 0,
+      // Desert -> Sand
+      2: 3, 17: 3, 130: 3,
+      // Savanna -> Grass
+      37: 0, 38: 0, 163: 0, 164: 0,
+      // Beach -> Sand
+      16: 3,
+      // Stony shore -> Stone
+      25: 5,
+      // Snowy beach -> Snow
+      26: 8,
+      // Mountain -> Stone/Gravel
+      3: 5, 20: 5, 36: 0, 131: 6, 162: 6, 181: 5, 182: 5,
+      // Snow -> Snow
+      12: 8, 13: 8, 30: 8, 31: 8, 158: 8, 178: 8, 179: 8, 180: 8,
+      // Ice spikes -> Packed Ice
+      140: 11,
+      // Swamp -> Grass
+      6: 0, 134: 0,
+      // Mangrove -> Mud
+      185: 14,
+      // Badlands -> Terracotta
+      39: 18, 40: 18, 41: 18, 165: 18, 166: 18, 167: 18,
+      // Mushroom -> Mycelium
+      14: 16, 15: 16,
+      // Nether
+      8: 19, 170: 20, 171: 22, 172: 23, 173: 24,
+      // End
+      9: 25,
+      // Cave
+      174: 5, 175: 17, 184: 5,
+    };
+    
+    // Loaded textures
+    const textureCache = {};
+    let currentMapping = {};
+    let originalMapping = {};
+    
+    // Load image as promise
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        if (textureCache[src]) {
+          resolve(textureCache[src]);
+          return;
+        }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          textureCache[src] = img;
+          resolve(img);
+        };
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+    
+    // Apply tint to grayscale texture
+    function applyTint(texture, tintColor) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 16;
+      canvas.height = 16;
+      const ctx = canvas.getContext('2d');
+      
+      // Draw original texture
+      ctx.drawImage(texture, 0, 0, 16, 16);
+      
+      // Get image data
+      const imageData = ctx.getImageData(0, 0, 16, 16);
+      const data = imageData.data;
+      
+      // Apply tint (multiply blend)
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = Math.floor(data[i] * tintColor[0] / 255);     // R
+        data[i+1] = Math.floor(data[i+1] * tintColor[1] / 255); // G
+        data[i+2] = Math.floor(data[i+2] * tintColor[2] / 255); // B
+        // Alpha unchanged
+      }
+      
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+    
+    // Get tinted texture for biome
+    function getTintedTexture(block, biomeId) {
+      if (!block.tinted) {
+        return textureCache[block.texture];
+      }
+      
+      let tint;
+      if (block.tintType === 'grass') {
+        tint = BIOME_GRASS_COLORS[biomeId] || BIOME_GRASS_COLORS.default;
+      } else if (block.tintType === 'water') {
+        tint = BIOME_WATER_COLORS[biomeId] || BIOME_WATER_COLORS.default;
+      }
+      
+      return applyTint(textureCache[block.texture], tint);
+    }
+    
+    // Draw preview
+    function drawPreview(container, block, biomeId) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      
+      const texture = textureCache[block.texture];
+      if (!texture) {
+        container.style.background = '#333';
+        return;
+      }
+      
+      if (block.tinted) {
+        const tinted = getTintedTexture(block, biomeId);
+        ctx.drawImage(tinted, 0, 0, 64, 64);
+      } else {
+        ctx.drawImage(texture, 0, 0, 64, 64);
+      }
+      
+      container.innerHTML = '';
+      container.appendChild(canvas);
+    }
+    
+    // Initialize
+    async function init() {
+      currentMapping = { ...DEFAULT_MAPPING };
+      originalMapping = { ...DEFAULT_MAPPING };
+      
+      // Load all textures
+      const loadPromises = BLOCK_TYPES.map(b => loadImage(b.texture).catch(() => null));
+      await Promise.all(loadPromises);
+      
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('biomeGrid').style.display = 'grid';
+      
+      renderBlockLegend();
+      renderBiomes();
+      updateStats();
+    }
+    
+    function renderBlockLegend() {
+      const grid = document.getElementById('blockGrid');
+      grid.innerHTML = '';
+      
+      BLOCK_TYPES.forEach(block => {
+        const item = document.createElement('div');
+        item.className = 'block-item';
+        
+        const preview = document.createElement('div');
+        preview.className = 'block-preview';
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        
+        const texture = textureCache[block.texture];
+        if (texture) {
+          if (block.tinted) {
+            const tinted = getTintedTexture(block, 1); // Use plains tint
+            ctx.drawImage(tinted, 0, 0, 32, 32);
+          } else {
+            ctx.drawImage(texture, 0, 0, 32, 32);
+          }
+        }
+        
+        preview.appendChild(canvas);
+        
+        const name = document.createElement('span');
+        name.className = 'block-name';
+        name.textContent = block.name + (block.tinted ? ' 🎨' : '');
+        
+        item.appendChild(preview);
+        item.appendChild(name);
+        grid.appendChild(item);
+      });
+    }
+    
+    function renderBiomes(filter = 'all') {
+      const grid = document.getElementById('biomeGrid');
+      grid.innerHTML = '';
+      
+      const categories = {};
+      ALL_BIOMES.forEach(biome => {
+        if (!categories[biome.category]) categories[biome.category] = [];
+        categories[biome.category].push(biome);
+      });
+      
+      const categoryOrder = ['ocean', 'plains', 'forest', 'jungle', 'desert', 'savanna', 'beach', 'mountain', 'snow', 'swamp', 'badlands', 'mushroom', 'nether', 'end', 'cave'];
+      const categoryNames = {
+        ocean: '🌊 Ocean & Rivers',
+        plains: '🌾 Plains & Meadows', 
+        forest: '🌲 Forests & Taigas',
+        jungle: '🌴 Jungles',
+        desert: '🏜️ Deserts',
+        savanna: '🦁 Savannas',
+        beach: '🏖️ Beaches & Shores',
+        mountain: '🏔️ Mountains & Hills',
+        snow: '❄️ Snowy Biomes',
+        swamp: '🐸 Swamps',
+        badlands: '🟤 Badlands',
+        mushroom: '🍄 Mushroom Islands',
+        nether: '🔥 Nether',
+        end: '🌌 The End',
+        cave: '🕳️ Caves',
+      };
+      
+      categoryOrder.forEach(cat => {
+        if (!categories[cat]) return;
+        
+        const biomes = categories[cat].filter(b => {
+          if (filter === 'all') return true;
+          if (filter === 'modified') return currentMapping[b.id] !== originalMapping[b.id];
+          return b.category === filter;
+        });
+        
+        if (biomes.length === 0) return;
+        
+        const header = document.createElement('div');
+        header.className = 'category-header';
+        header.textContent = categoryNames[cat] || cat;
+        grid.appendChild(header);
+        
+        biomes.forEach(biome => {
+          const card = createBiomeCard(biome);
+          grid.appendChild(card);
+        });
+      });
+    }
+    
+    function createBiomeCard(biome) {
+      const card = document.createElement('div');
+      card.className = 'biome-card';
+      card.dataset.biomeId = biome.id;
+      
+      const blockId = currentMapping[biome.id] ?? 0;
+      const block = BLOCK_TYPES.find(b => b.id === blockId) || BLOCK_TYPES[0];
+      
+      if (currentMapping[biome.id] !== originalMapping[biome.id]) {
+        card.classList.add('modified');
+      }
+      
+      const preview = document.createElement('div');
+      preview.className = 'preview';
+      drawPreview(preview, block, biome.id);
+      
+      const info = document.createElement('div');
+      info.className = 'biome-info';
+      info.innerHTML = `
+        <div class="biome-name">${formatBiomeName(biome.name)}</div>
+        <div class="biome-id">ID: ${biome.id} • ${biome.category}</div>
+        <select class="biome-select" onchange="updateMapping(${biome.id}, this.value)">
+          ${BLOCK_TYPES.map(b => `
+            <option value="${b.id}" ${b.id === blockId ? 'selected' : ''}>
+              ${b.name}${b.tinted ? ' 🎨' : ''}
+            </option>
+          `).join('')}
+        </select>
+      `;
+      
+      card.appendChild(preview);
+      card.appendChild(info);
+      return card;
+    }
+    
+    function formatBiomeName(name) {
+      return name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+    
+    function updateMapping(biomeId, blockId) {
+      currentMapping[biomeId] = parseInt(blockId);
+      
+      const card = document.querySelector(`[data-biome-id="${biomeId}"]`);
+      if (card) {
+        const block = BLOCK_TYPES.find(b => b.id === parseInt(blockId));
+        const preview = card.querySelector('.preview');
+        drawPreview(preview, block, biomeId);
+        
+        if (currentMapping[biomeId] !== originalMapping[biomeId]) {
+          card.classList.add('modified');
+        } else {
+          card.classList.remove('modified');
+        }
+      }
+      
+      updateStats();
+    }
+    
+    function updateStats() {
+      document.getElementById('totalBiomes').textContent = ALL_BIOMES.length;
+      
+      let modifiedCount = 0;
+      ALL_BIOMES.forEach(biome => {
+        if (currentMapping[biome.id] !== originalMapping[biome.id]) modifiedCount++;
+      });
+      
+      document.getElementById('modifiedCount').textContent = modifiedCount;
+    }
+    
+    function filterBiomes(filter, btn) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderBiomes(filter);
+    }
+    
+    function exportMapping() {
+      let code = `// ============================================================\n`;
+      code += `// AUTO-GENERATED BIOME → BLOCK MAPPING\n`;
+      code += `// Includes biome-specific grass/water tint colors\n`;
+      code += `// ============================================================\n\n`;
+      
+      code += `// Biome grass tint colors [R, G, B]\n`;
+      code += `const BIOME_GRASS_TINTS: Record<number, [number, number, number]> = {\n`;
+      Object.entries(BIOME_GRASS_COLORS).forEach(([k, v]) => {
+        if (k !== 'default') {
+          const biome = ALL_BIOMES.find(b => b.id === parseInt(k));
+          code += `  ${k}: [${v.join(', ')}], // ${biome ? biome.name : 'unknown'}\n`;
+        }
+      });
+      code += `};\n\n`;
+      
+      code += `// Biome water tint colors [R, G, B]\n`;
+      code += `const BIOME_WATER_TINTS: Record<number, [number, number, number]> = {\n`;
+      Object.entries(BIOME_WATER_COLORS).forEach(([k, v]) => {
+        if (k !== 'default') {
+          const biome = ALL_BIOMES.find(b => b.id === parseInt(k));
+          code += `  ${k}: [${v.join(', ')}], // ${biome ? biome.name : 'unknown'}\n`;
+        }
+      });
+      code += `};\n\n`;
+      
+      code += `// Biome to block mapping\n`;
+      code += `function getBlockForBiome(biomeId: number): BlockType {\n`;
+      code += `  switch (biomeId) {\n`;
+      
+      const byBlock = {};
+      Object.entries(currentMapping).forEach(([biomeId, blockId]) => {
+        if (!byBlock[blockId]) byBlock[blockId] = [];
+        byBlock[blockId].push(parseInt(biomeId));
+      });
+      
+      Object.entries(byBlock).forEach(([blockId, biomeIds]) => {
+        const block = BLOCK_TYPES.find(b => b.id === parseInt(blockId));
+        code += `    // ${block.name}\n`;
+        biomeIds.sort((a, b) => a - b).forEach(id => {
+          const biome = ALL_BIOMES.find(b => b.id === id);
+          code += `    case ${id}: // ${biome ? biome.name : 'unknown'}\n`;
+        });
+        code += `      return BlockType.${block.name};\n\n`;
+      });
+      
+      code += `    default:\n`;
+      code += `      return BlockType.Grass;\n`;
+      code += `  }\n`;
+      code += `}\n`;
+      
+      document.getElementById('outputCode').value = code;
+    }
+    
+    function exportJSON() {
+      const output = {
+        mapping: currentMapping,
+        grassTints: BIOME_GRASS_COLORS,
+        waterTints: BIOME_WATER_COLORS,
+        blocks: BLOCK_TYPES.map(b => ({ id: b.id, name: b.name, texture: b.texture, tinted: b.tinted })),
+        biomes: ALL_BIOMES,
+      };
+      document.getElementById('outputCode').value = JSON.stringify(output, null, 2);
+    }
+    
+    function resetAll() {
+      if (confirm('Reset all mappings to default?')) {
+        currentMapping = { ...originalMapping };
+        renderBiomes();
+        updateStats();
+      }
+    }
+    
+    init();
+  </script>
+</body>
+</html>

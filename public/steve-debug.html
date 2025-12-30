@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Steve Animation Debug</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    h1 { margin-bottom: 20px; color: #4ade80; }
+    
+    .container {
+      display: flex;
+      gap: 40px;
+      align-items: flex-start;
+    }
+    
+    .canvas-wrapper {
+      background: #2d2d44;
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    #steveCanvas {
+      border: 2px solid #4ade80;
+      border-radius: 8px;
+      image-rendering: pixelated;
+      background: #16213e;
+    }
+    
+    .controls {
+      background: #2d2d44;
+      border-radius: 12px;
+      padding: 20px;
+      min-width: 300px;
+    }
+    
+    .control-group {
+      margin-bottom: 20px;
+    }
+    
+    .control-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #a0a0a0;
+      font-size: 14px;
+    }
+    
+    .control-group h3 {
+      color: #4ade80;
+      margin-bottom: 12px;
+      font-size: 16px;
+    }
+    
+    input[type="range"] {
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    
+    .value-display {
+      font-family: monospace;
+      color: #60a5fa;
+      font-size: 14px;
+    }
+    
+    button {
+      background: #4ade80;
+      color: #1a1a2e;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      margin: 4px;
+      transition: all 0.2s;
+    }
+    
+    button:hover {
+      background: #22c55e;
+      transform: scale(1.05);
+    }
+    
+    button.active {
+      background: #f59e0b;
+    }
+    
+    button.secondary {
+      background: #60a5fa;
+    }
+    
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .info {
+      background: #16213e;
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #a0a0a0;
+    }
+    
+    .info code {
+      color: #f59e0b;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧍 Steve Animation Debug</h1>
+  
+  <div class="container">
+    <div class="canvas-wrapper">
+      <canvas id="steveCanvas" width="192" height="256"></canvas>
+      <p style="margin-top: 12px; color: #a0a0a0;">4x scale for visibility</p>
+    </div>
+    
+    <div class="controls">
+      <div class="control-group">
+        <h3>🎬 Animation Control</h3>
+        <div class="button-row">
+          <button id="btnIdle">Idle</button>
+          <button id="btnWalk" class="active">Walk</button>
+          <button id="btnRun">Run</button>
+        </div>
+        <div class="button-row">
+          <button id="btnPause" class="secondary">⏸ Pause</button>
+          <button id="btnStep" class="secondary">⏭ Step</button>
+        </div>
+      </div>
+      
+      <div class="control-group">
+        <h3>🔧 Manual Limb Control</h3>
+        <label>Limb Swing: <span class="value-display" id="swingValue">0.00</span></label>
+        <input type="range" id="limbSwing" min="-1" max="1" step="0.01" value="0">
+        
+        <label>Animation Speed: <span class="value-display" id="speedValue">10</span></label>
+        <input type="range" id="animSpeed" min="1" max="30" step="1" value="10">
+      </div>
+      
+      <div class="control-group">
+        <h3>📐 View Options</h3>
+        <label>Scale: <span class="value-display" id="scaleValue">1.8</span></label>
+        <input type="range" id="scaleSlider" min="1" max="4" step="0.1" value="1.8">
+        
+        <label>Depth Scale: <span class="value-display" id="depthValue">0.5</span></label>
+        <input type="range" id="depthSlider" min="0.2" max="1" step="0.05" value="0.5">
+      </div>
+      
+      <div class="info">
+        <strong>How Minecraft animation works:</strong><br>
+        • Arms and legs swing using <code>sin(walkCycle)</code><br>
+        • Right arm + Left leg move together<br>
+        • Left arm + Right leg move together<br>
+        • Head bobs slightly with movement
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Steve skin layout (64x64 texture)
+    const SKIN_PARTS = {
+      head: {
+        top: { x: 8, y: 0, w: 8, h: 8 },
+        front: { x: 8, y: 8, w: 8, h: 8 },
+        right: { x: 16, y: 8, w: 8, h: 8 },
+        left: { x: 0, y: 8, w: 8, h: 8 },
+      },
+      body: {
+        top: { x: 20, y: 16, w: 8, h: 4 },
+        front: { x: 20, y: 20, w: 8, h: 12 },
+        right: { x: 28, y: 20, w: 4, h: 12 },
+        left: { x: 16, y: 20, w: 4, h: 12 },
+      },
+      rightArm: {
+        top: { x: 44, y: 16, w: 4, h: 4 },
+        front: { x: 44, y: 20, w: 4, h: 12 },
+        right: { x: 48, y: 20, w: 4, h: 12 },
+        left: { x: 40, y: 20, w: 4, h: 12 },
+      },
+      leftArm: {
+        top: { x: 36, y: 48, w: 4, h: 4 },
+        front: { x: 36, y: 52, w: 4, h: 12 },
+        right: { x: 40, y: 52, w: 4, h: 12 },
+        left: { x: 32, y: 52, w: 4, h: 12 },
+      },
+      rightLeg: {
+        top: { x: 4, y: 16, w: 4, h: 4 },
+        front: { x: 4, y: 20, w: 4, h: 12 },
+        right: { x: 8, y: 20, w: 4, h: 12 },
+        left: { x: 0, y: 20, w: 4, h: 12 },
+      },
+      leftLeg: {
+        top: { x: 20, y: 48, w: 4, h: 4 },
+        front: { x: 20, y: 52, w: 4, h: 12 },
+        right: { x: 24, y: 52, w: 4, h: 12 },
+        left: { x: 16, y: 52, w: 4, h: 12 },
+      },
+    };
+
+    const canvas = document.getElementById('steveCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    let skinImage = null;
+    let animationMode = 'walk'; // 'idle', 'walk', 'run'
+    let isPaused = false;
+    let walkCycle = 0;
+    let manualSwing = 0;
+    let useManualSwing = false;
+    let animSpeed = 10;
+    let scale = 1.8;
+    let depthScale = 0.5;
+
+    // Load skin
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      skinImage = img;
+      console.log('Skin loaded!');
+      requestAnimationFrame(gameLoop);
+    };
+    img.onerror = () => {
+      console.error('Failed to load skin');
+    };
+    img.src = '/texturepack/assets/minecraft/textures/entity/player/wide/steve.png';
+
+    let lastTime = performance.now();
+
+    function gameLoop(currentTime) {
+      const deltaTime = (currentTime - lastTime) / 1000;
+      lastTime = currentTime;
+
+      if (!isPaused && !useManualSwing) {
+        // Update walk cycle based on mode
+        let speedMultiplier = 1;
+        if (animationMode === 'idle') speedMultiplier = 0;
+        else if (animationMode === 'run') speedMultiplier = 2;
+        
+        walkCycle += deltaTime * animSpeed * speedMultiplier;
+      }
+
+      // Calculate limb swing
+      let limbSwing;
+      if (useManualSwing) {
+        limbSwing = manualSwing;
+      } else {
+        limbSwing = animationMode === 'idle' ? 0 : Math.sin(walkCycle);
+      }
+
+      // Update UI
+      document.getElementById('swingValue').textContent = limbSwing.toFixed(2);
+      document.getElementById('limbSwing').value = limbSwing;
+
+      // Render
+      renderSteve(limbSwing);
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function renderSteve(limbSwing) {
+      if (!skinImage) return;
+
+      // Clear with dark background
+      ctx.fillStyle = '#16213e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw grid for reference
+      ctx.strokeStyle = '#2d2d44';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < canvas.width; i += 16) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, canvas.height);
+        ctx.stroke();
+      }
+      for (let i = 0; i < canvas.height; i += 16) {
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(canvas.width, i);
+        ctx.stroke();
+      }
+
+      // SIMPLE APPROACH: Work in "Steve pixels" then scale everything at once
+      // Steve is 32 pixels tall: head(8) + body(12) + legs(12)
+      // Body is 8 wide, arms are 4 wide, legs are 4 wide each
+      
+      const totalScale = scale * 4; // 4x for display canvas
+      const centerX = canvas.width / 2;
+      const feetY = canvas.height - 30;
+      
+      // Steve body measurements in his native pixels
+      const HEAD = 8, BODY_H = 12, LEG_H = 12;
+      const BODY_W = 8, ARM_W = 4, LEG_W = 4;
+      
+      // Calculate scaled sizes
+      const headH = HEAD * totalScale;
+      const bodyH = BODY_H * totalScale;
+      const legH = LEG_H * totalScale;
+      const bodyW = BODY_W * totalScale;
+      const armW = ARM_W * totalScale;
+      const legW = LEG_W * totalScale;
+      
+      // Y positions (top of each section, stacking from bottom up)
+      const hipY = feetY - legH;         // Hip level = top of legs
+      const bodyTop = hipY - bodyH;      // Body sits ABOVE legs
+      const headTop = bodyTop - headH;   // Head sits ABOVE body
+      
+      // Animation: Minecraft-style rotation around pivot points
+      // limbSwing ranges from -1 to 1, convert to radians (max ~45 degrees)
+      const maxSwingAngle = Math.PI / 4; // 45 degrees max swing
+      const swingAngle = limbSwing * maxSwingAngle;
+
+      // Draw shadow
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.beginPath();
+      ctx.ellipse(centerX, feetY + 8, bodyW * 0.8, bodyW * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // === DRAW BACK TO FRONT ===
+      // Limbs rotate around their pivot points (shoulder/hip)
+      
+      // 1. RIGHT ARM (back) - swings OPPOSITE to right leg
+      const rightArmPivotX = centerX - bodyW/2 + armW*0.2;
+      const rightArmPivotY = bodyTop + 1;
+      drawRotatedLimb(SKIN_PARTS.rightArm,
+        rightArmPivotX, rightArmPivotY,
+        ARM_W, BODY_H, ARM_W, totalScale, depthScale, 0.55, swingAngle);
+
+      // 2. RIGHT LEG (back)
+      const rightLegPivotX = centerX - legW/2 + legW*0.3;
+      const rightLegPivotY = hipY;
+      drawRotatedLimb(SKIN_PARTS.rightLeg,
+        rightLegPivotX, rightLegPivotY,
+        LEG_W, LEG_H, LEG_W, totalScale, depthScale, 0.65, -swingAngle);
+
+      // 3. BODY (center) - no rotation
+      drawBodyPart(SKIN_PARTS.body,
+        centerX,
+        bodyTop,
+        BODY_W, BODY_H, 4, totalScale, depthScale, 0.8);
+
+      // 4. LEFT LEG (front)
+      const leftLegPivotX = centerX + legW/2 - legW*0.3;
+      const leftLegPivotY = hipY;
+      drawRotatedLimb(SKIN_PARTS.leftLeg,
+        leftLegPivotX, leftLegPivotY,
+        LEG_W, LEG_H, LEG_W, totalScale, depthScale, 0.85, swingAngle);
+
+      // 5. LEFT ARM (front) - swings OPPOSITE to left leg
+      const leftArmPivotX = centerX + bodyW/2 - armW*0.2;
+      const leftArmPivotY = bodyTop + 1;
+      drawRotatedLimb(SKIN_PARTS.leftArm,
+        leftArmPivotX, leftArmPivotY,
+        ARM_W, BODY_H, ARM_W, totalScale, depthScale, 0.8, -swingAngle);
+
+      // 6. HEAD - very subtle bob
+      const headBob = Math.abs(limbSwing) * 1;
+      drawBodyPart(SKIN_PARTS.head,
+        centerX,
+        headTop - headBob,
+        HEAD, HEAD, HEAD, totalScale, depthScale, 1.0);
+
+      // Debug lines
+      ctx.strokeStyle = '#f59e0b';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(centerX, 0);
+      ctx.lineTo(centerX, canvas.height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function drawBodyPart(textures, x, y, w, h, d, totalScale, dScale, brightness) {
+      // w, h, d are in Steve's native pixels
+      // totalScale converts to canvas pixels
+      const width = w * totalScale;
+      const height = h * totalScale;
+      const depth = d * totalScale * dScale;
+
+      const halfW = width / 2;
+      const halfD = depth / 2;
+
+      // Top face (diamond)
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, y - halfD);
+      ctx.lineTo(x + halfW, y);
+      ctx.lineTo(x, y + halfD);
+      ctx.lineTo(x - halfW, y);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        skinImage,
+        textures.top.x, textures.top.y, textures.top.w, textures.top.h,
+        x - halfW, y - halfD, width, depth
+      );
+      ctx.restore();
+
+      // Left face (front)
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x - halfW, y);
+      ctx.lineTo(x, y + halfD);
+      ctx.lineTo(x, y + halfD + height);
+      ctx.lineTo(x - halfW, y + height);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        skinImage,
+        textures.front.x, textures.front.y, textures.front.w, textures.front.h,
+        x - halfW, y, halfW, height
+      );
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.15 / brightness})`;
+      ctx.fill();
+      ctx.restore();
+
+      // Right face (side)
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x + halfW, y);
+      ctx.lineTo(x, y + halfD);
+      ctx.lineTo(x, y + halfD + height);
+      ctx.lineTo(x + halfW, y + height);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        skinImage,
+        textures.right.x, textures.right.y, textures.right.w, textures.right.h,
+        x, y, halfW, height
+      );
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.35 / brightness})`;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw a limb with rotation around a pivot point (Minecraft-style)
+    function drawRotatedLimb(textures, pivotX, pivotY, w, h, d, totalScale, dScale, brightness, angle) {
+      const width = w * totalScale;
+      const height = h * totalScale;
+      const depth = d * totalScale * dScale;
+
+      const halfW = width / 2;
+      const halfD = depth / 2;
+
+      // Calculate where the bottom of the limb ends up after rotation
+      const swingOffsetX = Math.sin(angle) * height * 0.3;
+      const swingOffsetY = (1 - Math.cos(angle)) * height * 0.15;
+      
+      // For isometric projection, forward swing goes down-left
+      const isoSwingX = -swingOffsetX * 0.5;
+      const isoSwingY = swingOffsetX * 0.5 + swingOffsetY;
+
+      ctx.save();
+      ctx.translate(pivotX, pivotY);
+      
+      // Apply subtle skew to simulate 3D rotation
+      const skewAmount = angle * 0.15;
+      ctx.transform(1, skewAmount, 0, 1, 0, 0);
+
+      const x = isoSwingX;
+      const y = isoSwingY;
+
+      // Top face (diamond)
+      ctx.beginPath();
+      ctx.moveTo(x, y - halfD);
+      ctx.lineTo(x + halfW, y);
+      ctx.lineTo(x, y + halfD);
+      ctx.lineTo(x - halfW, y);
+      ctx.closePath();
+      ctx.save();
+      ctx.clip();
+      ctx.drawImage(
+        skinImage,
+        textures.top.x, textures.top.y, textures.top.w, textures.top.h,
+        x - halfW, y - halfD, width, depth
+      );
+      ctx.restore();
+
+      // Left face (front) - brightness varies with swing
+      const frontBrightness = brightness * (1 + angle * 0.1);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x - halfW, y);
+      ctx.lineTo(x, y + halfD);
+      ctx.lineTo(x, y + halfD + height);
+      ctx.lineTo(x - halfW, y + height);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        skinImage,
+        textures.front.x, textures.front.y, textures.front.w, textures.front.h,
+        x - halfW, y, halfW, height
+      );
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.15 / frontBrightness})`;
+      ctx.fill();
+      ctx.restore();
+
+      // Right face (side)
+      const sideBrightness = brightness * (1 - angle * 0.1);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x + halfW, y);
+      ctx.lineTo(x, y + halfD);
+      ctx.lineTo(x, y + halfD + height);
+      ctx.lineTo(x + halfW, y + height);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(
+        skinImage,
+        textures.right.x, textures.right.y, textures.right.w, textures.right.h,
+        x, y, halfW, height
+      );
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.35 / sideBrightness})`;
+      ctx.fill();
+      ctx.restore();
+
+      ctx.restore(); // Restore from pivot translation and skew
+    }
+
+    // Event listeners
+    document.getElementById('btnIdle').onclick = () => {
+      animationMode = 'idle';
+      useManualSwing = false;
+      updateButtons();
+    };
+    document.getElementById('btnWalk').onclick = () => {
+      animationMode = 'walk';
+      useManualSwing = false;
+      updateButtons();
+    };
+    document.getElementById('btnRun').onclick = () => {
+      animationMode = 'run';
+      useManualSwing = false;
+      updateButtons();
+    };
+    document.getElementById('btnPause').onclick = () => {
+      isPaused = !isPaused;
+      document.getElementById('btnPause').textContent = isPaused ? '▶ Play' : '⏸ Pause';
+    };
+    document.getElementById('btnStep').onclick = () => {
+      walkCycle += 0.2;
+    };
+
+    document.getElementById('limbSwing').oninput = (e) => {
+      manualSwing = parseFloat(e.target.value);
+      useManualSwing = true;
+      document.getElementById('swingValue').textContent = manualSwing.toFixed(2);
+    };
+
+    document.getElementById('animSpeed').oninput = (e) => {
+      animSpeed = parseFloat(e.target.value);
+      document.getElementById('speedValue').textContent = animSpeed;
+    };
+
+    document.getElementById('scaleSlider').oninput = (e) => {
+      scale = parseFloat(e.target.value);
+      document.getElementById('scaleValue').textContent = scale.toFixed(1);
+    };
+
+    document.getElementById('depthSlider').oninput = (e) => {
+      depthScale = parseFloat(e.target.value);
+      document.getElementById('depthValue').textContent = depthScale.toFixed(2);
+    };
+
+    function updateButtons() {
+      document.querySelectorAll('.button-row button:not(.secondary)').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.getElementById('btn' + animationMode.charAt(0).toUpperCase() + animationMode.slice(1)).classList.add('active');
+    }
+  </script>
+</body>
+</html>
+
