@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Isocraft by Gui Dávid</title>
     <style>
       @font-face {
@@ -26,6 +26,17 @@
         overflow: hidden;
         background: #1a1a2e;
         cursor: none;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      
+      /* Show cursor on touch devices */
+      @media (hover: none) and (pointer: coarse) {
+        html, body {
+          cursor: default;
+        }
       }
       
       canvas {

@@ -33,6 +33,7 @@ import {
 } from './GamepadManager';
 import { CreativeInventory } from './CreativeInventory';
 import { PlayerPhysics, type PhysicsWorld } from './PlayerPhysics';
+import { MobileControls, isMobileDevice } from './MobileControls';
 
 // Constants
 export const BLOCK_SIZE = 1; // 1 unit = 1 block in 3D space
@@ -75,6 +76,11 @@ export class Game3D {
   // Gamepad state
   private isGamepadAttacking: boolean = false;
   private isGamepadCrouching: boolean = false;
+  
+  // Mobile controls
+  private mobileControls: MobileControls | null = null;
+  private mobileMovement = { x: 0, y: 0 };
+  private isMobileTouchBreaking = false;
   
   private clock: THREE.Clock;
   private isInitialized = false;
@@ -140,6 +146,7 @@ export class Game3D {
     this.pauseMenu.onResume = () => {
       this.isPaused = false;
       this.crosshair.setVisible(true);
+      if (this.mobileControls && isMobileDevice()) this.mobileControls.setVisible(true);
     };
     this.pauseMenu.onToggleDebug = () => {
       this.debugUI.toggleVisibility();
@@ -153,11 +160,91 @@ export class Game3D {
     this.creativeInventory.onOpen = () => {
       this.isPaused = true;
       this.crosshair.setVisible(false);
+      if (this.mobileControls) this.mobileControls.setVisible(false);
     };
     this.creativeInventory.onClose = () => {
       this.isPaused = false;
       this.crosshair.setVisible(true);
+      if (this.mobileControls && isMobileDevice()) this.mobileControls.setVisible(true);
     };
+    
+    // Initialize mobile controls if on mobile device
+    if (isMobileDevice()) {
+      this.setupMobileControls();
+    }
+  }
+  
+  /**
+   * Set up mobile touch controls
+   */
+  private setupMobileControls(): void {
+    this.mobileControls = new MobileControls({
+      onMove: (x, y) => {
+        this.mobileMovement.x = x;
+        this.mobileMovement.y = y;
+      },
+      onJump: () => {
+        if (this.player && !this.isPaused) {
+          if (this.player.swimming) {
+            // Swim up when in water
+            const swimUpSpeed = 3.0;
+            if (this.playerPhysics) {
+              const waterSurfaceY = this.playerPhysics.calculateTargetY(
+                this.player.position.x,
+                this.player.position.z,
+                this.player.position.y,
+                true
+              );
+              const newY = this.player.position.y + swimUpSpeed * 0.1;
+              this.player.position.y = Math.min(newY, waterSurfaceY);
+            }
+          } else {
+            this.player.jump();
+          }
+        }
+      },
+      onZoom: (delta) => {
+        if (!this.isPaused) {
+          this.zoom += delta;
+          this.zoom = Math.max(5, Math.min(26, this.zoom));
+          this.updateCameraZoom();
+        }
+      },
+      onBreakStart: (screenX, screenY) => {
+        if (!this.isPaused) {
+          this.isMobileTouchBreaking = true;
+          this.updateBlockHighlight(screenX, screenY);
+        }
+      },
+      onBreakEnd: () => {
+        this.isMobileTouchBreaking = false;
+        if (this.blockBreaking) {
+          this.blockBreaking.stopBreaking();
+        }
+      },
+      onPlace: (screenX, screenY) => {
+        if (!this.isPaused) {
+          // Update highlight to touch position first
+          this.updateBlockHighlight(screenX, screenY);
+          // Then place block
+          this.placeBlock();
+        }
+      },
+      onCrosshairMove: (screenX, screenY) => {
+        if (!this.isPaused) {
+          // Move crosshair to touch position
+          this.crosshair.moveBy(
+            screenX - this.crosshair.getPosition().x,
+            screenY - this.crosshair.getPosition().y
+          );
+          // Update block highlight
+          this.updateBlockHighlight(screenX, screenY);
+        }
+      },
+    });
+    
+    // On mobile, show system cursor since we use touch
+    document.body.style.cursor = '';
   }
   
   /**
@@ -241,6 +328,11 @@ export class Game3D {
     
     // Add canvas to page
     document.body.appendChild(this.renderer.domElement);
+    
+    // Disable browser touch gestures on canvas for mobile
+    if (isMobileDevice()) {
+      this.renderer.domElement.style.touchAction = 'none';
+    }
     
     // Update loading
     if (loadingEl) {
@@ -460,6 +552,7 @@ export class Game3D {
         this.pauseMenu.toggle();
         this.isPaused = this.pauseMenu.isMenuVisible();
         this.crosshair.setVisible(!this.isPaused);
+        if (this.mobileControls) this.mobileControls.setVisible(!this.isPaused && isMobileDevice());
       }
     };
   }
@@ -486,6 +579,7 @@ export class Game3D {
         this.pauseMenu.toggle();
         this.isPaused = this.pauseMenu.isMenuVisible();
         this.crosshair.setVisible(!this.isPaused);
+        if (this.mobileControls) this.mobileControls.setVisible(!this.isPaused && isMobileDevice());
         return;
       }
       
@@ -723,7 +817,7 @@ export class Game3D {
    * Update block breaking each frame (called from game loop)
    */
   private updateBlockBreaking(deltaTime: number): void {
-    const isAttacking = this.isMouseDown || this.isGamepadAttacking;
+    const isAttacking = this.isMouseDown || this.isGamepadAttacking || this.isMobileTouchBreaking;
     if (!isAttacking || !this.blockHighlight || !this.chunkManager || !this.player || !this.blockBreaking) {
       return;
     }
@@ -1075,6 +1169,12 @@ export class Game3D {
       moveZ = -gamepadMove.y - gamepadMove.x;
     }
     
+    // Mobile analog stick movement (isometric: same as gamepad)
+    if (Math.abs(this.mobileMovement.x) > 0.01 || Math.abs(this.mobileMovement.y) > 0.01) {
+      moveX = -this.mobileMovement.y + this.mobileMovement.x;
+      moveZ = -this.mobileMovement.y - this.mobileMovement.x;
+    }
+    
     // Jump with Space (or swim up when in water)
     if (keys.has('Space')) {
       if (this.player.swimming) {
@@ -1331,6 +1431,7 @@ export class Game3D {
     this.shaderDebugUI.destroy();
     this.pauseMenu.destroy();
     this.creativeInventory.destroy();
+    this.mobileControls?.destroy();
     getMusicManager().destroy();
   }
 }
