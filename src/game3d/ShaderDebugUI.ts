@@ -16,6 +16,10 @@ export interface ShaderSettings {
   sunX: number;
   sunY: number;
   sunZ: number;
+  // Depth shading settings
+  heightDarkening: number;
+  depthShading: number;
+  baseHeight: number;
 }
 
 // Global material registry - all shader materials register here
@@ -60,6 +64,16 @@ export function updateAllMaterials(settings: Partial<ShaderSettings>): void {
     if (material.uniforms.sunDirection) {
       material.uniforms.sunDirection.value.copy(sunDir);
     }
+    // Depth shading uniforms
+    if (settings.heightDarkening !== undefined && material.uniforms.heightDarkening) {
+      material.uniforms.heightDarkening.value = settings.heightDarkening;
+    }
+    if (settings.depthShading !== undefined && material.uniforms.depthShading) {
+      material.uniforms.depthShading.value = settings.depthShading;
+    }
+    if (settings.baseHeight !== undefined && material.uniforms.baseHeight) {
+      material.uniforms.baseHeight.value = settings.baseHeight;
+    }
   }
 }
 
@@ -69,17 +83,20 @@ export class ShaderDebugUI {
   private settings: ShaderSettings;
 
   constructor() {
-    // Default values matching BlockShader.ts
+    // Default values matching BlockShader.ts - more visible shading
     this.settings = {
       shaderEnabled: true,
       topBrightness: 1.0,
-      bottomBrightness: 0.6,
-      northSouthBrightness: 0.9,
-      eastWestBrightness: 0.8,
+      bottomBrightness: 0.4,
+      northSouthBrightness: 0.7,
+      eastWestBrightness: 0.75,
       sunBoost: 0.5,
-      sunX: 50,
-      sunY: 100,
-      sunZ: 50,
+      sunX: 40,
+      sunY: 75,
+      sunZ: 55,
+      heightDarkening: 0.0,
+      depthShading: 0.0,
+      baseHeight: 64,
     };
 
     this.container = document.createElement('div');
@@ -168,6 +185,28 @@ export class ShaderDebugUI {
           </div>
         </div>
         
+        <div class="shader-section">
+          <div class="section-title">Depth Shading</div>
+          
+          <div class="slider-row">
+            <label>Height Dark</label>
+            <input type="range" id="shader-height-dark" min="0" max="1.0" step="0.05" value="${this.settings.heightDarkening}">
+            <span class="slider-value" id="shader-height-dark-val">${this.settings.heightDarkening}</span>
+          </div>
+          
+          <div class="slider-row">
+            <label>Depth Shade</label>
+            <input type="range" id="shader-depth-shade" min="0" max="1.0" step="0.05" value="${this.settings.depthShading}">
+            <span class="slider-value" id="shader-depth-shade-val">${this.settings.depthShading}</span>
+          </div>
+          
+          <div class="slider-row">
+            <label>Base Height</label>
+            <input type="range" id="shader-base-height" min="0" max="128" step="1" value="${this.settings.baseHeight}">
+            <span class="slider-value" id="shader-base-height-val">${this.settings.baseHeight}</span>
+          </div>
+        </div>
+        
         <div class="shader-actions">
           <button id="shader-reset">Reset Defaults</button>
           <button id="shader-copy">Copy Values</button>
@@ -203,6 +242,11 @@ export class ShaderDebugUI {
     this.bindSlider('shader-sun-y', 'sunY');
     this.bindSlider('shader-sun-z', 'sunZ');
     
+    // Depth shading sliders
+    this.bindSlider('shader-height-dark', 'heightDarkening');
+    this.bindSlider('shader-depth-shade', 'depthShading');
+    this.bindSlider('shader-base-height', 'baseHeight');
+    
     // Reset button
     document.getElementById('shader-reset')?.addEventListener('click', () => {
       this.resetDefaults();
@@ -234,13 +278,16 @@ export class ShaderDebugUI {
     this.settings = {
       shaderEnabled: true,
       topBrightness: 1.0,
-      bottomBrightness: 0.6,
-      northSouthBrightness: 0.9,
-      eastWestBrightness: 0.8,
+      bottomBrightness: 0.4,
+      northSouthBrightness: 0.7,
+      eastWestBrightness: 0.75,
       sunBoost: 0.5,
-      sunX: 50,
-      sunY: 100,
-      sunZ: 50,
+      sunX: 40,
+      sunY: 75,
+      sunZ: 55,
+      heightDarkening: 0.0,
+      depthShading: 0.0,
+      baseHeight: 64,
     };
     
     // Update UI
@@ -257,6 +304,9 @@ export class ShaderDebugUI {
     this.updateSlider('shader-sun-x', this.settings.sunX);
     this.updateSlider('shader-sun-y', this.settings.sunY);
     this.updateSlider('shader-sun-z', this.settings.sunZ);
+    this.updateSlider('shader-height-dark', this.settings.heightDarkening);
+    this.updateSlider('shader-depth-shade', this.settings.depthShading);
+    this.updateSlider('shader-base-height', this.settings.baseHeight);
     
     // Update materials
     updateAllMaterials(this.settings);
@@ -281,7 +331,12 @@ const FACE_BRIGHTNESS = {
 };
 
 const SUN_BOOST = ${this.settings.sunBoost};
-const SUN_DIRECTION = new THREE.Vector3(${this.settings.sunX}, ${this.settings.sunY}, ${this.settings.sunZ});`;
+const SUN_DIRECTION = new THREE.Vector3(${this.settings.sunX}, ${this.settings.sunY}, ${this.settings.sunZ});
+
+// Depth shading
+const HEIGHT_DARKENING = ${this.settings.heightDarkening};
+const DEPTH_SHADING = ${this.settings.depthShading};
+const BASE_HEIGHT = ${this.settings.baseHeight};`;
     
     navigator.clipboard.writeText(output).then(() => {
       const outputEl = document.getElementById('shader-output');

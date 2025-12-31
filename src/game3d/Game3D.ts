@@ -94,7 +94,7 @@ export class Game3D {
     // Random seed
     this.seed = Math.floor(Math.random() * 2147483647);
     
-    // Create renderer
+    // Create renderer with shadow support
     this.renderer = new THREE.WebGLRenderer({ 
       antialias: true,
       powerPreference: 'high-performance'
@@ -102,6 +102,10 @@ export class Game3D {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x87CEEB); // Sky blue
+    
+    // Enable shadow mapping with soft shadows (hides edge swimming)
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     
     // Create scene
     this.scene = new THREE.Scene();
@@ -307,17 +311,48 @@ export class Game3D {
   }
 
   /**
-   * Set up scene lighting
+   * Set up scene lighting with shadow support
    */
   private setupLights(): void {
     // Ambient light for base illumination
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(ambient);
     
-    // Directional light (sun) from above-right
+    // Directional light (sun) - user tuned position
     const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-    sun.position.set(50, 100, 50);
-    sun.castShadow = false; // Disable for performance
+    sun.position.set(15, 200, 160); // Shadows fall east
+    
+    // Enable shadow casting
+    sun.castShadow = true;
+    
+    // Shadow map size (higher = less shadow swimming)
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    
+    // Shadow camera frustum - must cover visible area
+    // For isometric view with zoom ~10, visible area is roughly 40-50 units
+    const shadowSize = 80;
+    sun.shadow.camera.left = -shadowSize;
+    sun.shadow.camera.right = shadowSize;
+    sun.shadow.camera.top = shadowSize;
+    sun.shadow.camera.bottom = -shadowSize;
+    sun.shadow.camera.near = 10;
+    sun.shadow.camera.far = 300;
+    
+    // Shadow bias to prevent shadow acne (user tuned)
+    sun.shadow.bias = -0.0041;
+    sun.shadow.normalBias = 0.005;
+    sun.shadow.radius = 2; // Soft shadow edges (reduces swimming)
+    
+    // IMPORTANT: Add target to scene for it to work
+    this.scene.add(sun.target);
+    
+    // Store reference to update shadow camera position
+    (this as any).sunLight = sun;
+    
+    // Shadow offset values (user tuned for east-facing shadows)
+    (this as any).shadowOffset = { x: 15, y: 200, z: 160 };
+    
     this.scene.add(sun);
     
     // Hemisphere light for sky/ground color variation
@@ -1081,12 +1116,6 @@ export class Game3D {
       // Update crosshair with smooth movement (handles acceleration/deceleration)
       this.crosshair.updateGamepad(crosshairInput.x, crosshairInput.y, deltaTime);
       
-      // Update block highlight if crosshair is moving or has input
-      if (this.crosshair.isMoving() || Math.abs(crosshairInput.x) > 0.01 || Math.abs(crosshairInput.y) > 0.01) {
-        const crosshairPos = this.crosshair.getPosition();
-        this.updateBlockHighlight(crosshairPos.x, crosshairPos.y);
-      }
-      
       // Continuous zoom with triggers (L2 = zoom out, R2 = zoom in)
       const zoomSpeed = 8 * deltaTime; // Zoom units per second
       if (gamepad.isActionPressed(GameAction.ZoomIn)) {
@@ -1113,6 +1142,11 @@ export class Game3D {
       
       // Update camera to follow player
       this.updateCamera();
+      
+      // Update block highlight to reflect camera movement
+      // (when player moves, crosshair now points to different world position)
+      const crosshairPos = this.crosshair.getPosition();
+      this.updateBlockHighlight(crosshairPos.x, crosshairPos.y);
       
       // Update chunks around player
       if (this.chunkManager && this.player) {
@@ -1357,6 +1391,34 @@ export class Game3D {
       this.player.position.y,
       this.player.position.z
     );
+    
+    // Update shadow camera to follow player (keeps shadows in visible area)
+    const sun = (this as any).sunLight as THREE.DirectionalLight;
+    const shadowOffset = (this as any).shadowOffset || { x: 15, y: 200, z: 160 };
+    if (sun) {
+      // STABLE SHADOW MAPPING: Snap shadow camera to texel boundaries
+      // This prevents shadow "swimming" when the player moves
+      const shadowMapSize = sun.shadow.mapSize.width; // 2048
+      const shadowCameraSize = 60; // From sun.shadow.camera.right
+      const texelSize = (shadowCameraSize * 2) / shadowMapSize; // World units per shadow texel
+      
+      // Snap target position to texel grid (round instead of floor for better centering)
+      const snappedX = Math.round(this.player.position.x / texelSize) * texelSize;
+      const snappedZ = Math.round(this.player.position.z / texelSize) * texelSize;
+      
+      // Position sun relative to snapped position
+      sun.position.set(
+        snappedX + shadowOffset.x,
+        this.player.position.y + shadowOffset.y,
+        snappedZ + shadowOffset.z
+      );
+      // Point shadow camera at snapped position
+      sun.target.position.set(
+        snappedX,
+        this.player.position.y,
+        snappedZ
+      );
+    }
   }
 
   /**

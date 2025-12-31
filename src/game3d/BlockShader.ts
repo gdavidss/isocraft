@@ -6,26 +6,27 @@
  * 1. Directional light contribution from the sun
  * 2. Face-based ambient occlusion (Minecraft-style per-face brightness)
  * 3. Base ambient light
+ * 4. Height-based darkening (lower blocks are darker - simulates AO from blocks above)
+ * 5. Isometric depth shading (blocks further from camera are darker)
  */
 
 import * as THREE from 'three';
 import { registerMaterial } from './ShaderDebugUI';
 
-// Default sun direction (normalized) - matches Game3D sun position
-const DEFAULT_SUN_DIR = new THREE.Vector3(50, 100, 50).normalize();
+// Default sun direction (normalized) - user tuned
+const DEFAULT_SUN_DIR = new THREE.Vector3(40, 75, 55).normalize();
 
-// Minecraft-style face brightness values (these are the base, sun adds on top)
-// Values above 1.0 to compensate for dark textures like bark
+// Face brightness values - more contrast for visible shading
 const FACE_BRIGHTNESS = {
   TOP: 1.0,      // +Y face - fully lit
-  BOTTOM: 0.6,   // -Y face - darkest
-  NORTH: 0.9,    // -Z face
-  SOUTH: 0.9,    // +Z face  
-  EAST: 0.8,     // +X face - increased for logs
-  WEST: 0.8,     // -X face - increased for logs
+  BOTTOM: 0.4,   // -Y face - darkest
+  NORTH: 0.7,    // -Z face - side in shadow
+  SOUTH: 0.7,    // +Z face - side in shadow
+  EAST: 0.75,    // +X face - slightly brighter side
+  WEST: 0.75,    // -X face - slightly brighter side
 };
 
-// Optimized vertex shader - calculates brightness in vertex shader (cheaper)
+// Vertex shader with depth shading and real shadow support
 const vertexShader = /* glsl */ `
   uniform float topBrightness;
   uniform float bottomBrightness;
@@ -34,12 +35,26 @@ const vertexShader = /* glsl */ `
   uniform vec3 sunDirection;
   uniform float sunBoost;
   uniform bool shaderEnabled;
+  uniform float heightDarkening;
+  uniform float depthShading;
+  uniform float baseHeight;
   
   varying vec2 vUv;
   varying float vBrightness;
   
+  // Shadow map support
+  #include <common>
+  #include <shadowmap_pars_vertex>
+  
   void main() {
     vUv = uv;
+    
+    // Get world position for depth calculations
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    
+    // Transform normal to world space (required for shadow bias)
+    vec3 objectNormal = normal;
+    vec3 transformedNormal = normalMatrix * objectNormal;
     
     // If shader disabled, use flat brightness
     if (!shaderEnabled) {
@@ -48,32 +63,45 @@ const vertexShader = /* glsl */ `
       // === Face-based Brightness (branchless) ===
       vec3 absNormal = abs(normal);
       
-      // Determine dominant axis using step functions (no branching)
       float isYDominant = step(absNormal.x, absNormal.y) * step(absNormal.z, absNormal.y);
       float isXDominant = (1.0 - isYDominant) * step(absNormal.z, absNormal.x);
       float isZDominant = 1.0 - isYDominant - isXDominant;
       
-      // Select brightness based on dominant axis
       float isTop = step(0.0, normal.y);
       float yBrightness = mix(bottomBrightness, topBrightness, isTop);
       
-      float brightness = isYDominant * yBrightness +
-                         isXDominant * eastWestBrightness +
-                         isZDominant * northSouthBrightness;
+      // Face brightness - uniform for isometric view (no directional divide)
+      float xBrightness = eastWestBrightness;
+      float zBrightness = northSouthBrightness;
       
-      // Sun boost
+      float brightness = isYDominant * yBrightness +
+                         isXDominant * xBrightness +
+                         isZDominant * zBrightness;
+      
       float sunLight = max(dot(normal, sunDirection), 0.0) * sunBoost;
       brightness += sunLight;
       
-      // Apply minimum brightness floor
-      vBrightness = 0.15 + (brightness * 0.85);
+      // Height-based darkening
+      float heightDiff = worldPosition.y - baseHeight;
+      float heightFactor = clamp(heightDiff / 10.0, -1.0, 1.0);
+      brightness *= 1.0 + (heightFactor * heightDarkening * 0.5);
+      
+      // Isometric depth shading
+      float isoDepth = (worldPosition.x + worldPosition.z) / 30.0;
+      float depthFactor = clamp(isoDepth, -1.0, 1.0);
+      brightness *= 0.85 + (depthFactor * depthShading * 0.35);
+      
+      vBrightness = max(0.15, brightness);
     }
     
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    
+    // Calculate shadow coordinates
+    #include <shadowmap_vertex>
   }
 `;
 
-// Optimized instance-aware vertex shader
+// Instance-aware vertex shader with depth shading and shadow support
 const instancedVertexShader = /* glsl */ `
   uniform float topBrightness;
   uniform float bottomBrightness;
@@ -82,17 +110,30 @@ const instancedVertexShader = /* glsl */ `
   uniform vec3 sunDirection;
   uniform float sunBoost;
   uniform bool shaderEnabled;
+  uniform float heightDarkening;
+  uniform float depthShading;
+  uniform float baseHeight;
   
   varying vec2 vUv;
   varying float vBrightness;
   
+  // Shadow map support
+  #include <common>
+  #include <shadowmap_pars_vertex>
+  
   void main() {
     vUv = uv;
+    
+    // Get world position (account for instancing)
+    vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    
+    // Transform normal to world space (required for shadow bias)
+    vec3 objectNormal = normal;
+    vec3 transformedNormal = normalMatrix * objectNormal;
     
     if (!shaderEnabled) {
       vBrightness = 1.0;
     } else {
-      // === Face-based Brightness (branchless) ===
       vec3 absNormal = abs(normal);
       
       float isYDominant = step(absNormal.x, absNormal.y) * step(absNormal.z, absNormal.y);
@@ -102,22 +143,37 @@ const instancedVertexShader = /* glsl */ `
       float isTop = step(0.0, normal.y);
       float yBrightness = mix(bottomBrightness, topBrightness, isTop);
       
+      // Face brightness - uniform for isometric view (no directional divide)
+      float xBrightness = eastWestBrightness;
+      float zBrightness = northSouthBrightness;
+
       float brightness = isYDominant * yBrightness +
-                         isXDominant * eastWestBrightness +
-                         isZDominant * northSouthBrightness;
+                         isXDominant * xBrightness +
+                         isZDominant * zBrightness;
       
       float sunLight = max(dot(normal, sunDirection), 0.0) * sunBoost;
       brightness += sunLight;
       
-      vBrightness = 0.15 + (brightness * 0.85);
+      float heightDiff = worldPosition.y - baseHeight;
+      float heightFactor = clamp(heightDiff / 10.0, -1.0, 1.0);
+      brightness *= 1.0 + (heightFactor * heightDarkening * 0.5);
+      
+      float isoDepth = (worldPosition.x + worldPosition.z) / 30.0;
+      float depthFactor = clamp(isoDepth, -1.0, 1.0);
+      brightness *= 0.85 + (depthFactor * depthShading * 0.35);
+      
+      vBrightness = max(0.15, brightness);
     }
     
     vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mvPosition;
+    
+    // Calculate shadow coordinates
+    #include <shadowmap_vertex>
   }
 `;
 
-// Optimized fragment shader - minimal work, brightness pre-calculated
+// Fragment shader with shadow support
 const fragmentShader = /* glsl */ `
   uniform sampler2D map;
   uniform vec3 color;
@@ -126,11 +182,34 @@ const fragmentShader = /* glsl */ `
   varying vec2 vUv;
   varying float vBrightness;
   
+  // Shadow map support
+  #include <common>
+  #include <packing>
+  #include <lights_pars_begin>
+  #include <shadowmap_pars_fragment>
+  
   void main() {
     vec4 texColor = texture2D(map, vUv);
     
-    // Apply tint and brightness
-    gl_FragColor = vec4(texColor.rgb * color * vBrightness, texColor.a * opacity);
+    // Calculate shadow (1.0 = fully lit, 0.0 = fully shadowed)
+    float shadow = 1.0;
+    
+    #if defined( USE_SHADOWMAP ) && ( NUM_DIR_LIGHT_SHADOWS > 0 )
+      DirectionalLightShadow directionalLight = directionalLightShadows[0];
+      shadow = getShadow(
+        directionalShadowMap[0],
+        directionalLight.shadowMapSize,
+        directionalLight.shadowIntensity,
+        directionalLight.shadowBias,
+        directionalLight.shadowRadius,
+        vDirectionalShadowCoord[0]
+      );
+      // Don't make shadows completely black - ambient light still reaches them
+      shadow = 0.5 + shadow * 0.5;
+    #endif
+    
+    // Apply tint, brightness, and shadow
+    gl_FragColor = vec4(texColor.rgb * color * vBrightness * shadow, texColor.a * opacity);
     
     // Alpha test for leaves
     if (gl_FragColor.a < 0.1) discard;
@@ -147,10 +226,15 @@ export interface BlockShaderOptions {
   // Lighting options
   sunDirection?: THREE.Vector3;
   sunBoost?: number; // Extra brightness for sun-facing surfaces (0-0.3)
+  // Depth shading options
+  heightDarkening?: number; // How much to darken lower blocks (0-1)
+  depthShading?: number;    // How much to darken distant blocks in isometric view (0-1)
+  baseHeight?: number;      // Reference height for height-based shading (default: 64)
 }
 
 /**
  * Create a Minecraft-style block material with face shading and subtle sun highlights
+ * Includes depth-based shading for better depth perception in isometric view
  */
 export function createBlockMaterial(options: BlockShaderOptions = {}): THREE.ShaderMaterial {
   const {
@@ -162,29 +246,40 @@ export function createBlockMaterial(options: BlockShaderOptions = {}): THREE.Sha
     instanced = false,
     sunDirection = DEFAULT_SUN_DIR,
     sunBoost = 0.5, // Strong sun highlight
+    heightDarkening = 0.0,  // Disabled - was causing brightness divide
+    depthShading = 0.0,     // Disabled - was causing brightness divide
+    baseHeight = 64,        // Sea level as reference
   } = options;
   
   const material = new THREE.ShaderMaterial({
-    uniforms: {
-      map: { value: map },
-      color: { value: color },
-      opacity: { value: opacity },
-      // Shader toggle
-      shaderEnabled: { value: true },
-      // Lighting uniforms (used in vertex shader)
-      sunDirection: { value: sunDirection.clone().normalize() },
-      sunBoost: { value: sunBoost },
-      // Face brightness values (used in vertex shader)
-      topBrightness: { value: FACE_BRIGHTNESS.TOP },
-      bottomBrightness: { value: FACE_BRIGHTNESS.BOTTOM },
-      northSouthBrightness: { value: FACE_BRIGHTNESS.NORTH },
-      eastWestBrightness: { value: FACE_BRIGHTNESS.EAST },
-    },
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.lights, // Required for shadow mapping
+      {
+        map: { value: map },
+        color: { value: color },
+        opacity: { value: opacity },
+        // Shader toggle
+        shaderEnabled: { value: true },
+        // Lighting uniforms (used in vertex shader)
+        sunDirection: { value: sunDirection.clone().normalize() },
+        sunBoost: { value: sunBoost },
+        // Face brightness values (used in vertex shader)
+        topBrightness: { value: FACE_BRIGHTNESS.TOP },
+        bottomBrightness: { value: FACE_BRIGHTNESS.BOTTOM },
+        northSouthBrightness: { value: FACE_BRIGHTNESS.NORTH },
+        eastWestBrightness: { value: FACE_BRIGHTNESS.EAST },
+        // Depth shading uniforms
+        heightDarkening: { value: heightDarkening },
+        depthShading: { value: depthShading },
+        baseHeight: { value: baseHeight },
+      }
+    ]),
     vertexShader: instanced ? instancedVertexShader : vertexShader,
     fragmentShader,
     transparent,
     side,
     depthWrite: !transparent,
+    lights: true, // Enable light/shadow uniforms
   });
   
   // Register material for live debug updates

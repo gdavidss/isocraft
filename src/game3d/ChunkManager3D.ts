@@ -18,8 +18,8 @@ import {
   isBlockLog,
 } from '../world/BlockDefinition';
 
-const DEFAULT_LOAD_RADIUS = 4;   // Default chunks to load around player
-const DEFAULT_UNLOAD_RADIUS = 6; // Default chunks to unload beyond this
+const DEFAULT_LOAD_RADIUS = 3;   // Reduced from 4 for performance (49 vs 81 chunks)
+const DEFAULT_UNLOAD_RADIUS = 5; // Default chunks to unload beyond this
 
 // Reusable geometry for blocks
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
@@ -97,6 +97,9 @@ function createCrossGeometry(): THREE.BufferGeometry {
 
 // Reusable cross geometry for saplings
 const crossGeometry = createCrossGeometry();
+
+// Note: Real shadow mapping is now used instead of fake shadow decals
+// Shadow mapping is configured in Game3D.ts setupLights() and BlockShader.ts
 
 // Re-export door/trapdoor checks for external use (using flyweight definitions)
 export function isDoorBlock(blockType: BlockType): boolean {
@@ -616,22 +619,29 @@ export class ChunkManager3D {
       const isSapling = isBlockSapling(blockType);
       const isLog = isBlockLog(blockType);
       
-      // Check if this is a grass-like block that needs multi-material (different top/side textures)
+      // Grass-like blocks - use INSTANCED rendering for performance
+      // (Sacrifices multi-material top/side textures, but saves ~20k draw calls)
       const isGrassLikeBlock = blockType === BlockType.Grass || 
                                blockType === BlockType.Podzol || 
                                blockType === BlockType.Mycelium;
       
-      // Grass-like blocks need multi-material (different top/side/bottom textures)
-      // Use individual meshes with material array to show dirt sides correctly
       if (isGrassLikeBlock) {
         const tint = biome !== undefined ? this.textureManager.getBiomeTint(biome) : undefined;
-        const materials = this.textureManager.getGrassBlockMaterials(blockType, tint);
+        const material = this.textureManager.getInstancedMaterial(blockType, tint);
         
-        for (const pos of positions) {
-          const mesh = new THREE.Mesh(blockGeometry, materials);
-          mesh.position.set(pos.x, pos.y, pos.z);
-          group.add(mesh);
-        }
+        const instancedMesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
+        const matrix = new THREE.Matrix4();
+        
+        positions.forEach((pos, i) => {
+          matrix.setPosition(pos.x, pos.y, pos.z);
+          instancedMesh.setMatrixAt(i, matrix);
+        });
+        
+        instancedMesh.instanceMatrix.needsUpdate = true;
+        instancedMesh.frustumCulled = true;
+        instancedMesh.castShadow = true;
+        instancedMesh.receiveShadow = true;
+        group.add(instancedMesh);
         continue;
       }
       
@@ -648,6 +658,9 @@ export class ChunkManager3D {
         
         instancedMesh.instanceMatrix.needsUpdate = true;
         instancedMesh.frustumCulled = true;
+        // Logs only cast shadows (perf optimization)
+        instancedMesh.castShadow = true;
+        instancedMesh.receiveShadow = false;
         group.add(instancedMesh);
         continue;
       }
@@ -715,6 +728,11 @@ export class ChunkManager3D {
       });
       
       mesh.instanceMatrix.needsUpdate = true;
+      mesh.frustumCulled = true;
+      
+      // Terrain blocks cast and receive shadows
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       
       // Render order: Player(-5) -> Water(0) -> Leaves(2)
       // This ensures player shows through water, and leaves appear in front of water
@@ -828,9 +846,8 @@ export class ChunkManager3D {
       }
     }
     
-    // Create individual meshes for leaves (needed for raycasting/breaking)
-    // Tree blocks need to be interactable, so we use individual meshes
-    let totalLeavesMeshes = 0;
+    // Create INSTANCED meshes for leaves (massive performance boost)
+    // One draw call per leaf type instead of one per leaf block!
     for (const [batchKey, positions] of leavesBatches) {
       if (positions.length === 0) continue;
       
@@ -838,25 +855,32 @@ export class ChunkManager3D {
       const leavesType = parseInt(leavesTypeStr) as BlockType;
       const biome = parseInt(biomeStr);
       
-      // Get leaves material with biome tinting
-      const leavesMaterial = this.textureManager.getLeavesMaterial(leavesType, biome);
+      // Get instanced material for leaves with biome tint
+      const leavesMaterial = this.textureManager.getInstancedMaterial(leavesType, this.textureManager.getBiomeTint(biome));
       
-      for (const pos of positions) {
-        const mesh = new THREE.Mesh(blockGeometry, leavesMaterial);
-        mesh.position.set(pos.x, pos.y, pos.z);
-        // Name the mesh for debugging
-        mesh.name = `leaves_${pos.x}_${pos.y}_${pos.z}`;
-        // Render leaves after water so they appear in front when closer to camera
-        mesh.renderOrder = 2;
-        // Ensure mesh is on default layer for raycasting
-        mesh.layers.enableAll();
-        group.add(mesh);
-        totalLeavesMeshes++;
+      // Create instanced mesh for all leaves of this type
+      const instancedMesh = new THREE.InstancedMesh(blockGeometry, leavesMaterial, positions.length);
+      instancedMesh.name = `leaves_instanced_${batchKey}`;
+      instancedMesh.renderOrder = 2;
+      instancedMesh.frustumCulled = true;
+      // Leaves cast shadows (creates tree shadows on ground)
+      instancedMesh.castShadow = true;
+      instancedMesh.receiveShadow = false;
+      
+      const matrix = new THREE.Matrix4();
+      for (let i = 0; i < positions.length; i++) {
+        const pos = positions[i];
+        matrix.setPosition(pos.x, pos.y, pos.z);
+        instancedMesh.setMatrixAt(i, matrix);
       }
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      
+      group.add(instancedMesh);
     }
     
     
-    // Create individual meshes for logs (needed for raycasting/breaking)
+    // Create INSTANCED meshes for logs (massive performance boost)
+    // Sacrifice multi-material (bark sides vs ring tops) for performance
     const logsByType: Map<BlockType, THREE.Vector3[]> = new Map();
     for (const { pos, logType } of logPositions) {
       if (!logsByType.has(logType)) {
@@ -868,18 +892,25 @@ export class ChunkManager3D {
     for (const [logType, positions] of logsByType) {
       if (positions.length === 0) continue;
       
-      // Use multi-material for proper log appearance (bark on sides, rings on top)
-      const logMaterials = this.textureManager.getLogMaterials(logType);
+      // Use simple instanced material (bark texture on all sides)
+      const logMaterial = this.textureManager.getInstancedMaterial(logType);
       
-      for (const pos of positions) {
-        const mesh = new THREE.Mesh(blockGeometry, logMaterials);
-        mesh.position.set(pos.x, pos.y, pos.z);
-        // Name the mesh for debugging
-        mesh.name = `log_${pos.x}_${pos.y}_${pos.z}`;
-        // Ensure mesh is on default layer for raycasting
-        mesh.layers.enableAll();
-        group.add(mesh);
+      // Create instanced mesh for all logs of this type
+      const instancedMesh = new THREE.InstancedMesh(blockGeometry, logMaterial, positions.length);
+      instancedMesh.name = `logs_instanced_${logType}`;
+      instancedMesh.frustumCulled = true;
+      instancedMesh.castShadow = true; // Only logs cast shadows (not leaves)
+      instancedMesh.receiveShadow = false;
+
+      const matrix = new THREE.Matrix4();
+      for (let i = 0; i < positions.length; i++) {
+        const pos = positions[i];
+        matrix.setPosition(pos.x, pos.y, pos.z);
+        instancedMesh.setMatrixAt(i, matrix);
       }
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      
+      group.add(instancedMesh);
     }
     
     // Force matrix update on the group to ensure raycasting works properly

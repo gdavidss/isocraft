@@ -690,3 +690,4 @@ export function getAllBlockDefinitions(): ReadonlyMap<BlockType, BlockDefinition
   return BLOCK_DEFINITIONS;
 }
 
+
