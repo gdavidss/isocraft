@@ -3,7 +3,11 @@
  * Uses cubiomes for Minecraft biome generation
  */
 
+import { inject } from '@vercel/analytics';
 import { Game3D } from './game3d/Game3D';
+
+// Initialize Vercel Analytics
+inject();
 
 // Extend window for debugging
 declare global {
